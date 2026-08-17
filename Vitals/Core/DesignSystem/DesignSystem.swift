@@ -45,7 +45,12 @@ struct ProgressRing<Label: View>: View {
     var tint: Color = .accentColor
     @ViewBuilder var label: Label
 
-    private var clamped: Double { min(max(progress, 0), 1) }
+    /// NaN or infinite input renders as empty instead of feeding a non-finite
+    /// dimension into the trim (the "Invalid frame dimension" console warning).
+    private var clamped: Double {
+        guard progress.isFinite else { return 0 }
+        return min(max(progress, 0), 1)
+    }
 
     var body: some View {
         ZStack {

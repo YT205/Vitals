@@ -11,6 +11,7 @@ enum VitalsModelContainer {
         Exercise.self,
         WorkoutTemplate.self,
         TemplateItem.self,
+        TemplateSet.self,
         WorkoutSession.self,
         SetEntry.self,
         RecoveryRoutine.self,

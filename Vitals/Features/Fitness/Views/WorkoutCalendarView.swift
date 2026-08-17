@@ -12,8 +12,18 @@ struct WorkoutCalendarView: View {
 
     @State private var monthAnchor = Date.now
     @State private var selectedDay: Date?
+    /// Collapsed by default: a one-row week strip. Expands to the full month.
+    @State private var isExpanded = false
 
     private var calendar: Calendar { .current }
+
+    /// The last 7 days, oldest first, for the compact strip.
+    private var lastSevenDays: [Date] {
+        let today = calendar.startOfDay(for: .now)
+        return (0..<7).reversed().compactMap {
+            calendar.date(byAdding: .day, value: -$0, to: today)
+        }
+    }
 
     private var monthTitle: String {
         monthAnchor.formatted(.dateTime.month(.wide).year())
@@ -62,6 +72,59 @@ struct WorkoutCalendarView: View {
     }
 
     var body: some View {
+        VStack(spacing: 12) {
+            if isExpanded {
+                expandedMonth
+            } else {
+                compactWeek
+            }
+        }
+    }
+
+    // MARK: - Compact strip
+
+    /// One row: the last 7 days with a dot on training days.
+    private var compactWeek: some View {
+        VStack(spacing: 10) {
+            HStack {
+                Text("This Week")
+                    .font(.subheadline.weight(.semibold))
+                Spacer()
+                Button {
+                    withAnimation(.snappy) { isExpanded = true }
+                } label: {
+                    Label("Month", systemImage: "chevron.down")
+                        .font(.caption)
+                }
+                .buttonStyle(.borderless)
+            }
+
+            HStack(spacing: 6) {
+                ForEach(lastSevenDays, id: \.self) { day in
+                    let trained = trainedDays.contains(calendar.startOfDay(for: day))
+                    let isToday = calendar.isDateInToday(day)
+
+                    VStack(spacing: 3) {
+                        Text(day.formatted(.dateTime.weekday(.narrow)))
+                            .font(.system(size: 9, weight: .semibold))
+                            .foregroundStyle(.tertiary)
+                        Text("\(calendar.component(.day, from: day))")
+                            .font(.caption2.weight(isToday ? .bold : .regular))
+                            .foregroundStyle(isToday ? Color.accentColor : .primary)
+                        Circle()
+                            .fill(trained ? Color.accentColor : Color.gray.opacity(0.2))
+                            .frame(width: 5, height: 5)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .accessibilityLabel(accessibilityLabel(for: day, trained: trained))
+                }
+            }
+        }
+    }
+
+    // MARK: - Full month
+
+    private var expandedMonth: some View {
         VStack(spacing: 12) {
             header
 
@@ -129,6 +192,16 @@ struct WorkoutCalendarView: View {
                 .font(.subheadline.weight(.semibold))
 
             Spacer()
+
+            Button {
+                withAnimation(.snappy) {
+                    isExpanded = false
+                    selectedDay = nil
+                }
+            } label: {
+                Label("Week", systemImage: "chevron.up")
+                    .font(.caption)
+            }
 
             Button {
                 shiftMonth(by: -1)

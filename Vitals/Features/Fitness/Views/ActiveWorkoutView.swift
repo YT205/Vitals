@@ -22,6 +22,8 @@ struct ActiveWorkoutView: View {
     @State private var showingFinishSheet = false
     /// Set by the sheet, executed in `onDismiss` -- never during dismissal.
     @State private var pendingAction: FinishAction?
+    /// Completed exercises the user tapped back open.
+    @State private var manuallyExpanded: Set<String> = []
 
     /// Sets grouped by exercise, in the order the exercises were added.
     private var groups: [ExerciseGroup] {
@@ -48,51 +50,67 @@ struct ActiveWorkoutView: View {
                 .listRowInsets(EdgeInsets())
                 .listRowBackground(Color.clear)
 
-            if model.isResting {
-                Section { restBar }
-                    .listRowInsets(EdgeInsets())
-                    .listRowBackground(Color.clear)
-            }
+            // Always present -- the dial changes phase instead of the bar
+            // appearing and disappearing (which also caused transient
+            // invalid-frame warnings during the insert/remove animation).
+            Section { timerBar }
+                .listRowInsets(EdgeInsets())
+                .listRowBackground(Color.clear)
 
             ForEach(groups) { group in
-                Section {
-                    SetHeaderRow()
-                    ForEach(group.sets) { entry in
-                        SetRowView(
-                            entry: entry,
-                            isTiming: model.isTiming(entry),
-                            elapsedText: model.formattedSetElapsed,
-                            onStart: { model.startSet(entry, in: session) },
-                            onFinish: { model.finishSet(entry) },
-                            onReset: { model.resetSet(entry) }
-                        )
-                        .swipeActions(edge: .trailing) {
-                            // Swipe away sets you skipped -- anything left with
-                            // data in it gets saved at finish.
-                            Button(role: .destructive) {
-                                model.delete(entry, context: context)
-                            } label: {
-                                Label("Delete", systemImage: "trash")
-                            }
-                        }
-                        .swipeActions(edge: .leading) {
-                            Button {
-                                entry.isWarmup.toggle()
-                            } label: {
-                                Label(
-                                    entry.isWarmup ? "Working" : "Warmup",
-                                    systemImage: "flame"
-                                )
-                            }
-                            .tint(.orange)
-                        }
+                if isCollapsed(group) {
+                    Section {
+                        collapsedRow(group)
                     }
-                } header: {
-                    HStack {
-                        Text(group.name)
-                        Spacer()
-                        Text(group.muscleGroup.label)
-                            .foregroundStyle(.tertiary)
+                } else {
+                    Section {
+                        SetHeaderRow()
+                        ForEach(group.sets) { entry in
+                            SetRowView(
+                                entry: entry,
+                                isTiming: model.isTiming(entry),
+                                elapsedText: model.dialValueText,
+                                onStart: { model.startSet(entry, in: session) },
+                                onFinish: { model.finishSet(entry) },
+                                onReset: { model.resetSet(entry) }
+                            )
+                            .swipeActions(edge: .trailing) {
+                                // Swipe away sets you skipped -- anything left
+                                // with data in it gets saved at finish.
+                                Button(role: .destructive) {
+                                    model.delete(entry, context: context)
+                                } label: {
+                                    Label("Delete", systemImage: "trash")
+                                }
+                            }
+                            .swipeActions(edge: .leading) {
+                                Button {
+                                    entry.isWarmup.toggle()
+                                } label: {
+                                    Label(
+                                        entry.isWarmup ? "Working" : "Warmup",
+                                        systemImage: "flame"
+                                    )
+                                }
+                                .tint(.orange)
+                            }
+                        }
+                    } header: {
+                        HStack {
+                            Text(group.name)
+                            Spacer()
+                            if group.isComplete {
+                                Button {
+                                    manuallyExpanded.remove(group.name)
+                                } label: {
+                                    Label("Collapse", systemImage: "chevron.up")
+                                        .font(.caption2)
+                                }
+                            } else {
+                                Text(group.muscleGroup.label)
+                                    .foregroundStyle(.tertiary)
+                            }
+                        }
                     }
                 }
             }
@@ -195,33 +213,71 @@ struct ActiveWorkoutView: View {
         return WorkoutSession.formatMinutesSeconds(total)
     }
 
-    private var restBar: some View {
-        Card {
+    /// The persistent dial. Idle grey, filling while lifting, draining blue
+    /// during rest, orange counting up once the planned rest is spent.
+    private var timerBar: some View {
+        Card(padding: 12) {
             HStack(spacing: 14) {
-                ProgressRing(progress: model.restProgress, lineWidth: 5, tint: .blue)
+                ProgressRing(progress: model.dialProgress, lineWidth: 5, tint: model.dialTint)
                     .frame(width: 34, height: 34)
+                    .animation(.snappy, value: model.dialTint)
 
                 VStack(alignment: .leading, spacing: 1) {
-                    Text(model.formattedRest)
+                    Text(model.dialValueText)
                         .font(.title3.weight(.semibold).monospacedDigit())
                         .contentTransition(.numericText())
-                    Text("Rest")
+                        .foregroundStyle(model.phase == .overtime ? model.dialTint : .primary)
+                    Text(model.dialCaption)
                         .font(.caption2)
                         .foregroundStyle(.secondary)
                 }
 
                 Spacer()
 
-                Button("+30s") { model.addRest(seconds: 30) }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
+                if model.phase == .rest {
+                    Button("+30s") { model.addRest(seconds: 30) }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                }
 
-                Button("Skip") { model.stopRest() }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
+                if model.phase == .rest || model.phase == .overtime {
+                    Button("Skip") { model.skipRest() }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                }
             }
         }
         .padding(.horizontal)
+    }
+
+    // MARK: - Collapsed exercises
+
+    /// A finished exercise folds to one row (tap to reopen). Order preserved.
+    private func isCollapsed(_ group: ExerciseGroup) -> Bool {
+        group.isComplete && !manuallyExpanded.contains(group.name)
+    }
+
+    private func collapsedRow(_ group: ExerciseGroup) -> some View {
+        Button {
+            manuallyExpanded.insert(group.name)
+        } label: {
+            HStack(spacing: 10) {
+                Image(systemName: "checkmark.circle.fill")
+                    .foregroundStyle(.green)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(group.name)
+                        .font(.body.weight(.medium))
+                        .foregroundStyle(.primary)
+                    Text(group.summary(using: settings))
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                Image(systemName: "chevron.down")
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+            }
+        }
     }
 
     // MARK: - Actions
@@ -267,4 +323,18 @@ private struct ExerciseGroup: Identifiable {
     var sets: [SetEntry]
 
     var id: String { name }
+
+    var isComplete: Bool {
+        !sets.isEmpty && sets.allSatisfy(\.isDone)
+    }
+
+    /// "3 sets · top 185 lb" for the collapsed row.
+    func summary(using settings: AppSettings) -> String {
+        let working = sets.filter { !$0.isWarmup }
+        var parts = ["\(working.count) set\(working.count == 1 ? "" : "s")"]
+        if let top = working.map(\.weightKg).max(), top > 0 {
+            parts.append("top \(settings.formattedWeight(fromKilograms: top))")
+        }
+        return parts.joined(separator: " · ")
+    }
 }

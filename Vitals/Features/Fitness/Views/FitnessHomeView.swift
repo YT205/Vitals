@@ -18,6 +18,13 @@ struct FitnessHomeView: View {
     @Query(filter: #Predicate<WorkoutSession> { $0.endedAt == nil })
     private var activeSessions: [WorkoutSession]
 
+    @Query(
+        filter: #Predicate<WorkoutSession> { $0.endedAt != nil },
+        sort: \WorkoutSession.startedAt,
+        order: .reverse
+    )
+    private var finishedSessions: [WorkoutSession]
+
     @State private var launch: WorkoutLaunch?
     @State private var editingTemplate: WorkoutTemplate?
     @State private var draftTemplate: WorkoutTemplate?
@@ -66,10 +73,18 @@ struct FitnessHomeView: View {
                 }
 
                 Section {
-                    Button {
-                        createTemplate()
+                    ForEach(finishedSessions.prefix(3)) { session in
+                        NavigationLink {
+                            WorkoutDetailView(session: session)
+                        } label: {
+                            recentRow(session)
+                        }
+                    }
+
+                    NavigationLink {
+                        WorkoutHistoryView()
                     } label: {
-                        Label("New Workout", systemImage: "plus")
+                        Label("Full History", systemImage: "clock.arrow.circlepath")
                     }
 
                     NavigationLink {
@@ -77,11 +92,15 @@ struct FitnessHomeView: View {
                     } label: {
                         Label("Progress", systemImage: "chart.line.uptrend.xyaxis")
                     }
+                } header: {
+                    Text("Recent")
+                }
 
-                    NavigationLink {
-                        WorkoutHistoryView()
+                Section {
+                    Button {
+                        createTemplate()
                     } label: {
-                        Label("History", systemImage: "clock.arrow.circlepath")
+                        Label("New Workout", systemImage: "plus")
                     }
                 }
 
@@ -212,6 +231,22 @@ struct FitnessHomeView: View {
         }
     }
 
+    private func recentRow(_ session: WorkoutSession) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(session.title)
+                .font(.subheadline.weight(.medium))
+            HStack(spacing: 8) {
+                Text(session.startedAt.formatted(.relative(presentation: .named)))
+                Text("·")
+                Text(session.formattedDuration)
+                Text("·")
+                Text(settings.formattedWeight(fromKilograms: session.totalVolumeKg))
+            }
+            .font(.caption2)
+            .foregroundStyle(.secondary)
+        }
+    }
+
     // MARK: - Actions
 
     /// Runs after the preview sheet fully dismisses, so opening the editor or
@@ -240,14 +275,16 @@ struct FitnessHomeView: View {
         context.insert(session)
 
         for (index, item) in template.orderedItems.enumerated() {
-            for setNumber in 1...max(1, item.targetSets) {
+            // Per-set plan when it exists; legacy items synthesize one first.
+            let plan = item.materializedPlan(in: context)
+            for planSet in plan {
                 let entry = SetEntry(
                     exerciseName: item.exerciseName,
                     muscleGroup: item.muscleGroup,
                     exerciseOrder: index,
-                    setNumber: setNumber,
-                    weightKg: item.lastWeightKg,
-                    reps: item.targetReps,
+                    setNumber: planSet.setNumber,
+                    weightKg: planSet.weightKg,
+                    reps: planSet.reps,
                     restSeconds: item.restSeconds
                 )
                 entry.session = session

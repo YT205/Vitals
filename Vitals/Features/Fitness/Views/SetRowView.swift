@@ -33,9 +33,10 @@ struct SetRowView: View {
             TextField("0", value: weightBinding, format: .number.precision(.fractionLength(0...1)))
                 .keyboardType(.decimalPad)
                 .multilineTextAlignment(.center)
+                .font(.callout)
                 .frame(maxWidth: .infinity)
-                .padding(.vertical, 7)
-                .background(.background.secondary, in: .rect(cornerRadius: 8))
+                .padding(.vertical, 4)
+                .background(.background.secondary, in: .rect(cornerRadius: 7))
 
             Text("x")
                 .font(.caption)
@@ -44,9 +45,10 @@ struct SetRowView: View {
             TextField("0", value: $entry.reps, format: .number)
                 .keyboardType(.numberPad)
                 .multilineTextAlignment(.center)
+                .font(.callout)
                 .frame(maxWidth: .infinity)
-                .padding(.vertical, 7)
-                .background(.background.secondary, in: .rect(cornerRadius: 8))
+                .padding(.vertical, 4)
+                .background(.background.secondary, in: .rect(cornerRadius: 7))
 
             timingControl
         }

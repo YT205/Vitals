@@ -20,13 +20,13 @@ struct WorkoutPreviewSheet: View {
     let onAction: (WorkoutPreviewAction) -> Void
 
     private var totalSets: Int {
-        template.orderedItems.reduce(0) { $0 + $1.targetSets }
+        template.orderedItems.reduce(0) { $0 + $1.displayPlan.count }
     }
 
     /// Rough duration: per set, assume ~45s of work plus the planned rest.
     private var estimatedMinutes: Int {
         let seconds = template.orderedItems.reduce(0) {
-            $0 + $1.targetSets * ($1.restSeconds + 45)
+            $0 + $1.displayPlan.count * ($1.restSeconds + 45)
         }
         return max(1, seconds / 60)
     }
@@ -70,28 +70,44 @@ struct WorkoutPreviewSheet: View {
     }
 
     private func itemRow(_ item: TemplateItem) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: 6) {
             HStack {
                 Text(item.exerciseName)
                     .font(.body.weight(.medium))
                 Spacer()
-                Text("\(item.targetSets) x \(item.targetReps)")
-                    .font(.callout.weight(.semibold))
-                    .foregroundStyle(.tint)
+                Label("\(item.restSeconds)s rest", systemImage: "timer")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
             }
 
-            HStack(spacing: 12) {
-                Label(item.muscleGroup.label, systemImage: item.muscleGroup.systemImage)
-                Label("\(item.restSeconds)s rest", systemImage: "timer")
-                if item.lastWeightKg > 0 {
-                    Label(
-                        settings.formattedWeight(fromKilograms: item.lastWeightKg),
-                        systemImage: "scalemass"
-                    )
+            // The plan, one line per set, matching the workout screen.
+            ForEach(item.displayPlan, id: \.setNumber) { planSet in
+                HStack(spacing: 10) {
+                    Text("\(planSet.setNumber)")
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 20, height: 20)
+                        .background(Circle().fill(.gray.opacity(0.12)))
+
+                    if planSet.weightKg > 0 {
+                        Text(settings.formattedWeight(fromKilograms: planSet.weightKg))
+                            .font(.callout)
+                    } else {
+                        Text("--")
+                            .font(.callout)
+                            .foregroundStyle(.tertiary)
+                    }
+
+                    Text("x")
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+
+                    Text("\(planSet.reps) reps")
+                        .font(.callout)
+
+                    Spacer()
                 }
             }
-            .font(.caption2)
-            .foregroundStyle(.secondary)
         }
         .padding(.vertical, 2)
     }

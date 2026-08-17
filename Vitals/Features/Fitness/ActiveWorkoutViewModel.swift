@@ -1,32 +1,42 @@
 import Foundation
 import Observation
 import SwiftData
+import SwiftUI
 
-/// Owns the transient state of a workout in progress: which set is being
-/// timed, the rest countdown, live heart rate, and the finishing handshake
-/// with SwiftData and HealthKit.
+/// Owns the transient state of a workout in progress: the timer state machine,
+/// live heart rate, and the finishing handshake with SwiftData and HealthKit.
 ///
 /// The logged sets themselves live in SwiftData, so nothing here needs to hold
 /// them -- the views bind straight to the model objects.
 @MainActor
 @Observable
 final class ActiveWorkoutViewModel {
-    // MARK: - Set timing
+    /// The persistent dial cycles through these. One phase at a time:
+    /// lifting (`set`), resting (`rest`), past the planned rest (`overtime`),
+    /// or between exercises (`idle`).
+    enum TimerPhase: Equatable {
+        case idle
+        case set
+        case rest
+        case overtime
+    }
+
+    // MARK: - Timer state
+
+    private(set) var phase: TimerPhase = .idle
 
     /// The set currently being performed, if any.
     private(set) var activeSetID: PersistentIdentifier?
     /// Seconds since the active set started.
     private(set) var setElapsed: Int = 0
 
-    private var setTask: Task<Void, Never>?
+    /// Seconds left on the rest countdown.
+    private(set) var restRemaining: Int = 0
+    private(set) var restTotal: Int = 0
+    /// Seconds past the planned rest (counts up, dial turns orange).
+    private(set) var overtimeSeconds: Int = 0
 
-    // MARK: - Rest timer
-
-    /// Seconds left on the rest countdown. Zero means not resting.
-    var restRemaining: Int = 0
-    var restTotal: Int = 0
-
-    private var restTask: Task<Void, Never>?
+    private var tickTask: Task<Void, Never>?
 
     // MARK: - Heart rate
 
@@ -37,22 +47,55 @@ final class ActiveWorkoutViewModel {
     var isSaving = false
     var saveError: String?
 
-    // No deinit: `deinit` is nonisolated and can't touch main-actor state. All
-    // timer loops capture `self` weakly and return once this object is gone.
+    // No deinit: `deinit` is nonisolated and can't touch main-actor state. The
+    // tick loop captures `self` weakly and returns once this object is gone.
 
-    var isResting: Bool { restRemaining > 0 }
+    // MARK: - Dial presentation
 
-    var restProgress: Double {
-        guard restTotal > 0 else { return 0 }
-        return Double(restTotal - restRemaining) / Double(restTotal)
+    /// Ring fill for the current phase. Count-up phases (set, overtime) sweep
+    /// once per minute; rest drains the planned time.
+    var dialProgress: Double {
+        switch phase {
+        case .idle:
+            0
+        case .set:
+            Double(setElapsed % 60) / 60
+        case .rest:
+            restTotal > 0 ? Double(restTotal - restRemaining) / Double(restTotal) : 0
+        case .overtime:
+            Double(overtimeSeconds % 60) / 60
+        }
     }
 
-    var formattedRest: String {
-        WorkoutSession.formatMinutesSeconds(Double(restRemaining))
+    var dialTint: Color {
+        switch phase {
+        case .idle: .gray
+        case .set: .accentColor
+        case .rest: .blue
+        case .overtime: .orange
+        }
     }
 
-    var formattedSetElapsed: String {
-        WorkoutSession.formatMinutesSeconds(Double(setElapsed))
+    var dialValueText: String {
+        switch phase {
+        case .idle:
+            "0:00"
+        case .set:
+            WorkoutSession.formatMinutesSeconds(Double(setElapsed))
+        case .rest:
+            WorkoutSession.formatMinutesSeconds(Double(restRemaining))
+        case .overtime:
+            "+" + WorkoutSession.formatMinutesSeconds(Double(overtimeSeconds))
+        }
+    }
+
+    var dialCaption: String {
+        switch phase {
+        case .idle: "Ready"
+        case .set: "In set"
+        case .rest: "Rest"
+        case .overtime: "Over rest"
+        }
     }
 
     func isTiming(_ entry: SetEntry) -> Bool {
@@ -72,24 +115,17 @@ final class ActiveWorkoutViewModel {
             }
         }
 
-        stopRest()  // lifting now; the rest break is over either way
         entry.startedAt = .now
         activeSetID = entry.persistentModelID
         setElapsed = 0
-
-        setTask?.cancel()
-        setTask = Task { [weak self] in
-            while true {
-                try? await Task.sleep(for: .seconds(1))
-                if Task.isCancelled { return }
-                guard let self, self.activeSetID != nil else { return }
-                self.setElapsed += 1
-            }
-        }
+        restRemaining = 0
+        overtimeSeconds = 0
+        phase = .set
+        startTicking()
     }
 
     /// Stops the set timer, records the duration, marks the set done, and
-    /// starts that exercise's rest countdown.
+    /// rolls the dial into that exercise's rest countdown.
     func finishSet(_ entry: SetEntry) {
         if let start = entry.startedAt {
             entry.durationSeconds = Date.now.timeIntervalSince(start)
@@ -97,13 +133,15 @@ final class ActiveWorkoutViewModel {
         entry.markDone()
 
         if isTiming(entry) {
-            setTask?.cancel()
-            setTask = nil
             activeSetID = nil
             setElapsed = 0
         }
 
-        startRest(seconds: entry.restSeconds)
+        if entry.restSeconds > 0 {
+            startRest(seconds: entry.restSeconds)
+        } else {
+            goIdle()
+        }
     }
 
     /// Un-does a completed set (checkmark tapped by mistake). Clears its
@@ -112,36 +150,78 @@ final class ActiveWorkoutViewModel {
         entry.markNotDone()
     }
 
-    // MARK: - Rest timer
+    // MARK: - Rest flow
 
     func startRest(seconds: Int) {
-        guard seconds > 0 else { return }
-        restTask?.cancel()
+        guard seconds > 0 else {
+            goIdle()
+            return
+        }
         restTotal = seconds
         restRemaining = seconds
-
-        restTask = Task { [weak self] in
-            while true {
-                try? await Task.sleep(for: .seconds(1))
-                if Task.isCancelled { return }
-                guard let self else { return }
-                guard self.restRemaining > 0 else { return }
-                self.restRemaining -= 1
-            }
-        }
+        overtimeSeconds = 0
+        phase = .rest
+        startTicking()
     }
 
     func addRest(seconds: Int) {
-        guard isResting else { return }
+        guard phase == .rest else { return }
         restRemaining += seconds
         restTotal += seconds
     }
 
-    func stopRest() {
-        restTask?.cancel()
-        restTask = nil
+    /// Ends the rest (or overtime) and parks the dial.
+    func skipRest() {
+        goIdle()
+    }
+
+    private func goIdle() {
+        phase = .idle
         restRemaining = 0
         restTotal = 0
+        overtimeSeconds = 0
+        // The tick loop parks itself when it sees .idle.
+    }
+
+    // MARK: - The clock
+
+    /// One shared 1 Hz loop drives every phase; each tick advances whichever
+    /// phase is current. Restarting is idempotent.
+    private func startTicking() {
+        guard tickTask == nil else { return }
+        tickTask = Task { [weak self] in
+            while true {
+                try? await Task.sleep(for: .seconds(1))
+                if Task.isCancelled { return }
+                guard let self else { return }
+
+                switch self.phase {
+                case .idle:
+                    // Nothing to advance; park the loop until the next start.
+                    self.tickTask = nil
+                    return
+                case .set:
+                    self.setElapsed += 1
+                case .rest:
+                    if self.restRemaining > 1 {
+                        self.restRemaining -= 1
+                    } else {
+                        // Planned rest is up: flip to counting up, in orange.
+                        self.restRemaining = 0
+                        self.overtimeSeconds = 0
+                        self.phase = .overtime
+                        Haptics.routineComplete()
+                    }
+                case .overtime:
+                    self.overtimeSeconds += 1
+                }
+            }
+        }
+    }
+
+    private func stopTicking() {
+        tickTask?.cancel()
+        tickTask = nil
     }
 
     // MARK: - Heart rate
@@ -160,18 +240,18 @@ final class ActiveWorkoutViewModel {
 
     func delete(_ entry: SetEntry, context: ModelContext) {
         if isTiming(entry) {
-            setTask?.cancel()
-            setTask = nil
             activeSetID = nil
             setElapsed = 0
+            goIdle()
         }
         context.delete(entry)
     }
 
     // MARK: - Finishing
 
-    /// Closes the session, mirrors it to Apple Health, and writes the weights
-    /// used back onto the template so next time is prefilled.
+    /// Closes the session, mirrors it to Apple Health, and writes what you
+    /// actually lifted back into the template's per-set plan so next time is
+    /// prefilled with real numbers.
     ///
     /// Every set with real data (weight or reps entered) is kept and counted,
     /// whether or not it was explicitly finished -- timing is optional. Only
@@ -190,9 +270,8 @@ final class ActiveWorkoutViewModel {
            }) {
             finishSet(current)
         }
-        stopRest()
-        setTask?.cancel()
-        setTask = nil
+        goIdle()
+        stopTicking()
 
         isSaving = true
         saveError = nil
@@ -211,15 +290,7 @@ final class ActiveWorkoutViewModel {
 
         if let template {
             template.lastPerformedAt = end
-            for item in template.items {
-                let heaviest = session.completedSets
-                    .filter { $0.exerciseName == item.exerciseName }
-                    .map(\.weightKg)
-                    .max()
-                if let heaviest, heaviest > 0 {
-                    item.lastWeightKg = heaviest
-                }
-            }
+            writeBackPlan(from: session, to: template)
         }
 
         try? context.save()
@@ -241,6 +312,29 @@ final class ActiveWorkoutViewModel {
         isSaving = false
     }
 
+    /// Copies performed weights and reps back onto the matching plan sets
+    /// (matched by exercise name + set number), so the plan tracks reality.
+    private func writeBackPlan(from session: WorkoutSession, to template: WorkoutTemplate) {
+        for item in template.items {
+            let performed = session.completedSets
+                .filter { $0.exerciseName == item.exerciseName && !$0.isWarmup }
+
+            for planSet in item.sets {
+                if let match = performed.first(where: { $0.setNumber == planSet.setNumber }),
+                   match.weightKg > 0 {
+                    planSet.weightKg = match.weightKg
+                    planSet.reps = match.reps
+                }
+            }
+
+            // Legacy prefill field, still used when a plan has no per-set rows.
+            if let heaviest = performed.map(\.weightKg).max(), heaviest > 0 {
+                item.lastWeightKg = heaviest
+            }
+            item.refreshLegacySummary()
+        }
+    }
+
     /// Deletes the session *after* the workout screen has animated away.
     ///
     /// Deleting immediately was the freeze you hit: the screen's `@Bindable`
@@ -248,9 +342,8 @@ final class ActiveWorkoutViewModel {
     /// The delay lets the pop animation finish so nothing is observing the
     /// object when it dies.
     func discardAfterDismiss(session: WorkoutSession, context: ModelContext) {
-        stopRest()
-        setTask?.cancel()
-        setTask = nil
+        goIdle()
+        stopTicking()
         let target = session
         Task {
             try? await Task.sleep(for: .seconds(0.7))

@@ -108,7 +108,7 @@ struct RecoveryHomeView: View {
                         } header: {
                             Label("Suggested for You", systemImage: "sparkles")
                         } footer: {
-                            Text("Based on the muscle groups you trained in the last 3 days. Swipe a suggestion away to hide it for this cycle -- the routine stays in your library.")
+                            Text("Based on the muscle groups you trained in the last 3 days.")
                         }
                     }
 

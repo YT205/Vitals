@@ -1,7 +1,11 @@
 import SwiftData
 import SwiftUI
+import UIKit
 
 /// Create or edit a workout template ("Push Day A", "Legs", ...).
+///
+/// Each exercise is planned per set -- every set has its own weight and reps,
+/// laid out like the live workout screen -- plus a rest time for the exercise.
 struct TemplateEditorView: View {
     @Environment(\.modelContext) private var context
     @Environment(\.dismiss) private var dismiss
@@ -34,35 +38,26 @@ struct TemplateEditorView: View {
                         .textInputAutocapitalization(.words)
                 }
 
-                Section {
-                    if template.items.isEmpty {
+                if template.items.isEmpty {
+                    Section("Exercises") {
                         Text("No exercises yet.")
                             .foregroundStyle(.secondary)
-                    } else {
-                        ForEach(template.orderedItems) { item in
-                            itemRow(item)
-                        }
-                        .onDelete(perform: deleteItems)
-                        .onMove(perform: moveItems)
                     }
+                } else {
+                    ForEach(template.orderedItems) { item in
+                        exerciseSection(item)
+                    }
+                }
 
+                Section {
                     Button {
                         showingPicker = true
                     } label: {
                         Label("Add Exercises", systemImage: "plus")
                     }
-                } header: {
-                    HStack {
-                        Text("Exercises")
-                        Spacer()
-                        if template.items.count > 1 {
-                            EditButton()
-                                .font(.caption)
-                        }
-                    }
                 } footer: {
                     if !template.items.isEmpty {
-                        Text("Swipe left to remove an exercise. Tap Edit to drag them into a new order. Sets, reps and rest are the plan -- weights and reps can still change set by set during the workout.")
+                        Text("Each set keeps its own weight and reps. After a workout, what you actually lifted is written back into the plan.")
                     }
                 }
 
@@ -102,12 +97,9 @@ struct TemplateEditorView: View {
                     Text("Each builds a sequence for this workout's muscle groups and saves it to the Recovery tab. Cancelling this editor removes them again.")
                 }
             }
-            // Note: no forced editMode here. A Form locked in .active edit mode
-            // suppresses swipe-to-delete and interferes with text fields and
-            // steppers inside the reorderable rows -- it made the editor feel
-            // broken. EditButton in the section header toggles it on demand.
             .navigationTitle(isNew ? "New Workout" : "Edit Workout")
             .navigationBarTitleDisplayMode(.inline)
+            .scrollDismissesKeyboard(.interactively)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { cancel() }
@@ -115,6 +107,10 @@ struct TemplateEditorView: View {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") { save() }
                         .disabled(!canSave)
+                }
+                ToolbarItemGroup(placement: .keyboard) {
+                    Spacer()
+                    Button("Done") { hideKeyboard() }
                 }
             }
             .sheet(isPresented: $showingPicker) {
@@ -124,58 +120,158 @@ struct TemplateEditorView: View {
                     addExercises(exercises)
                 }
             }
+            .onAppear {
+                // Items created before per-set planning get plan rows built
+                // from their legacy targets, once.
+                for item in template.items {
+                    item.materializedPlan(in: context)
+                }
+            }
         }
     }
 
+    // MARK: - Exercise section
+
+    /// One exercise: its planned sets laid out like the live workout rows,
+    /// an Add Set button, and the rest picker.
     @ViewBuilder
-    private func itemRow(_ item: TemplateItem) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text(item.exerciseName)
-                .font(.body.weight(.medium))
+    private func exerciseSection(_ item: TemplateItem) -> some View {
+        Section {
+            PlanSetHeaderRow()
 
-            HStack(spacing: 16) {
-                Stepper(
-                    "\(item.targetSets) sets",
-                    value: Binding(
-                        get: { item.targetSets },
-                        set: { item.targetSets = $0 }
-                    ),
-                    in: 1...12
-                )
-                .font(.caption)
-
-                Stepper(
-                    "\(item.targetReps) reps",
-                    value: Binding(
-                        get: { item.targetReps },
-                        set: { item.targetReps = $0 }
-                    ),
-                    in: 1...50
-                )
-                .font(.caption)
+            ForEach(item.orderedSets) { planSet in
+                planSetRow(planSet)
+                    .swipeActions(edge: .trailing) {
+                        Button(role: .destructive) {
+                            deleteSet(planSet, from: item)
+                        } label: {
+                            Label("Delete", systemImage: "trash")
+                        }
+                    }
             }
 
-            Stepper(
-                "Rest: \(item.restSeconds)s",
-                value: Binding(
-                    get: { item.restSeconds },
-                    set: { item.restSeconds = $0 }
-                ),
-                in: 15...300,
-                step: 15
-            )
-            .font(.caption)
+            Button {
+                addSet(to: item)
+            } label: {
+                Label("Add Set", systemImage: "plus")
+                    .font(.subheadline)
+            }
 
-            if item.lastWeightKg > 0 {
-                Text("Last: \(settings.formattedWeight(fromKilograms: item.lastWeightKg))")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
+            Picker("Rest between sets", selection: Binding(
+                get: { item.restSeconds },
+                set: { item.restSeconds = $0 }
+            )) {
+                ForEach(Array(stride(from: 15, through: 300, by: 15)), id: \.self) { seconds in
+                    Text("\(seconds)s").tag(seconds)
+                }
+            }
+            .pickerStyle(.menu)
+            .font(.subheadline)
+        } header: {
+            HStack {
+                Text(item.exerciseName)
+                Spacer()
+                // Sections can't drag-reorder, so ordering lives here instead.
+                Menu {
+                    Button {
+                        move(item, by: -1)
+                    } label: {
+                        Label("Move Up", systemImage: "arrow.up")
+                    }
+                    .disabled(item.order == 0)
+
+                    Button {
+                        move(item, by: 1)
+                    } label: {
+                        Label("Move Down", systemImage: "arrow.down")
+                    }
+                    .disabled(item.order == template.items.count - 1)
+
+                    Button(role: .destructive) {
+                        deleteItem(item)
+                    } label: {
+                        Label("Remove Exercise", systemImage: "trash")
+                    }
+                } label: {
+                    Image(systemName: "ellipsis.circle")
+                        .font(.body)
+                }
+                .accessibilityLabel("Options for \(item.exerciseName)")
             }
         }
-        .padding(.vertical, 2)
+    }
+
+    private func move(_ item: TemplateItem, by offset: Int) {
+        var ordered = template.orderedItems
+        guard let index = ordered.firstIndex(where: { $0 === item }) else { return }
+        let target = index + offset
+        guard ordered.indices.contains(target) else { return }
+        ordered.swapAt(index, target)
+        for (newIndex, moved) in ordered.enumerated() {
+            moved.order = newIndex
+        }
+    }
+
+    private func planSetRow(_ planSet: TemplateSet) -> some View {
+        HStack(spacing: 10) {
+            Text("\(planSet.setNumber)")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .frame(width: 24, height: 24)
+                .background(Circle().fill(.gray.opacity(0.15)))
+
+            TextField("0", value: Binding(
+                get: { settings.displayWeight(fromKilograms: planSet.weightKg) },
+                set: { planSet.weightKg = settings.kilograms(fromDisplayWeight: $0) }
+            ), format: .number.precision(.fractionLength(0...1)))
+                .keyboardType(.decimalPad)
+                .multilineTextAlignment(.center)
+                .font(.callout)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 4)
+                .background(.background.secondary, in: .rect(cornerRadius: 7))
+
+            Text("x")
+                .font(.caption)
+                .foregroundStyle(.tertiary)
+
+            TextField("0", value: Binding(
+                get: { planSet.reps },
+                set: { planSet.reps = $0 }
+            ), format: .number)
+                .keyboardType(.numberPad)
+                .multilineTextAlignment(.center)
+                .font(.callout)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 4)
+                .background(.background.secondary, in: .rect(cornerRadius: 7))
+        }
     }
 
     // MARK: - Actions
+
+    private func addSet(to item: TemplateItem) {
+        let last = item.orderedSets.last
+        let planSet = TemplateSet(
+            setNumber: (item.sets.map(\.setNumber).max() ?? 0) + 1,
+            reps: last?.reps ?? 8,
+            weightKg: last?.weightKg ?? 0
+        )
+        planSet.item = item
+        context.insert(planSet)
+    }
+
+    private func deleteSet(_ planSet: TemplateSet, from item: TemplateItem) {
+        context.delete(planSet)
+        for (index, remaining) in item.orderedSets.filter({ $0 !== planSet }).enumerated() {
+            remaining.setNumber = index + 1
+        }
+    }
+
+    private func deleteItem(_ item: TemplateItem) {
+        context.delete(item)
+        renumber()
+    }
 
     private func createRecoveryRoutine(kind: RecoveryKind) {
         let trimmed = template.name.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -199,23 +295,8 @@ struct TemplateEditorView: View {
             )
             item.template = template
             context.insert(item)
+            item.materializedPlan(in: context)
             nextOrder += 1
-        }
-    }
-
-    private func deleteItems(at offsets: IndexSet) {
-        let ordered = template.orderedItems
-        for index in offsets {
-            context.delete(ordered[index])
-        }
-        renumber()
-    }
-
-    private func moveItems(from source: IndexSet, to destination: Int) {
-        var ordered = template.orderedItems
-        ordered.move(fromOffsets: source, toOffset: destination)
-        for (index, item) in ordered.enumerated() {
-            item.order = index
         }
     }
 
@@ -227,6 +308,9 @@ struct TemplateEditorView: View {
 
     private func save() {
         template.name = template.name.trimmingCharacters(in: .whitespacesAndNewlines)
+        for item in template.items {
+            item.refreshLegacySummary()
+        }
         renumber()
         try? context.save()
         dismiss()
@@ -239,5 +323,34 @@ struct TemplateEditorView: View {
         // Roll back any edits made to an existing template.
         context.rollback()
         dismiss()
+    }
+
+    private func hideKeyboard() {
+        UIApplication.shared.sendAction(
+            #selector(UIResponder.resignFirstResponder),
+            to: nil,
+            from: nil,
+            for: nil
+        )
+    }
+}
+
+/// Column titles for the plan rows, matching the live workout header.
+private struct PlanSetHeaderRow: View {
+    @Environment(AppSettings.self) private var settings
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Text("Set")
+                .frame(width: 24)
+            Text(settings.weightUnit.label.uppercased())
+                .frame(maxWidth: .infinity)
+            Text("")
+                .font(.caption)
+            Text("REPS")
+                .frame(maxWidth: .infinity)
+        }
+        .font(.caption2.weight(.semibold))
+        .foregroundStyle(.tertiary)
     }
 }
