@@ -107,15 +107,23 @@ struct RecoveryHomeView: View {
                     }
                 }
 
-                Section {
+            }
+            .navigationTitle("Recovery")
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    if !routines.isEmpty {
+                        EditButton()
+                    }
+                }
+                ToolbarItem(placement: .topBarTrailing) {
                     Button {
                         createRoutine()
                     } label: {
-                        Label("New Routine", systemImage: "plus")
+                        Image(systemName: "plus")
                     }
+                    .accessibilityLabel("New routine")
                 }
             }
-            .navigationTitle("Recovery")
             .sheet(item: $editingRoutine) { routine in
                 RoutineEditorView(routine: routine, isNew: false)
             }
@@ -177,6 +185,19 @@ struct RecoveryHomeView: View {
                 Label("Edit", systemImage: "pencil")
             }
             .tint(.blue)
+        }
+        .contextMenu {
+            Button {
+                editingRoutine = routine
+            } label: {
+                Label("Edit Routine", systemImage: "pencil")
+            }
+            Button(role: .destructive) {
+                context.delete(routine)
+                try? context.save()
+            } label: {
+                Label("Delete Routine", systemImage: "trash")
+            }
         }
     }
 

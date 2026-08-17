@@ -126,29 +126,46 @@ struct FitnessHomeView: View {
     }
 
     private func templateRow(_ template: WorkoutTemplate) -> some View {
-        Button {
-            start(from: template)
-        } label: {
-            HStack {
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(template.name)
-                        .font(.body.weight(.medium))
-                    Text(template.summary)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    if let last = template.lastPerformedAt {
-                        Text("Last done \(last.formatted(.relative(presentation: .named)))")
-                            .font(.caption2)
-                            .foregroundStyle(.tertiary)
+        HStack(spacing: 12) {
+            // Tap the row to start the workout...
+            Button {
+                start(from: template)
+            } label: {
+                HStack {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(template.name)
+                            .font(.body.weight(.medium))
+                        Text(template.summary)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        if let last = template.lastPerformedAt {
+                            Text("Last done \(last.formatted(.relative(presentation: .named)))")
+                                .font(.caption2)
+                                .foregroundStyle(.tertiary)
+                        }
                     }
+                    Spacer()
+                    Image(systemName: "play.circle.fill")
+                        .font(.title2)
+                        .foregroundStyle(.tint)
                 }
-                Spacer()
-                Image(systemName: "play.circle.fill")
-                    .font(.title2)
-                    .foregroundStyle(.tint)
+                .contentShape(.rect)
             }
+            .buttonStyle(.borderless)
+            .disabled(activeSession != nil)
+
+            // ...tap the pencil to change the plan. Always enabled, even
+            // mid-workout (edits apply from the next session).
+            Button {
+                editingTemplate = template
+            } label: {
+                Image(systemName: "pencil.circle")
+                    .font(.title2)
+                    .foregroundStyle(.secondary)
+            }
+            .buttonStyle(.borderless)
+            .accessibilityLabel("Edit \(template.name)")
         }
-        .disabled(activeSession != nil)
         .swipeActions(edge: .leading) {
             Button {
                 editingTemplate = template

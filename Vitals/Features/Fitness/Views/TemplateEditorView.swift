@@ -51,10 +51,17 @@ struct TemplateEditorView: View {
                         Label("Add Exercises", systemImage: "plus")
                     }
                 } header: {
-                    Text("Exercises")
+                    HStack {
+                        Text("Exercises")
+                        Spacer()
+                        if template.items.count > 1 {
+                            EditButton()
+                                .font(.caption)
+                        }
+                    }
                 } footer: {
                     if !template.items.isEmpty {
-                        Text("Swipe to delete. Drag to reorder. Sets and reps here are just targets -- you can change anything mid-workout.")
+                        Text("Swipe left to remove an exercise. Tap Edit to drag them into a new order. Sets, reps and rest are the plan -- weights and reps can still change set by set during the workout.")
                     }
                 }
 
@@ -76,7 +83,10 @@ struct TemplateEditorView: View {
                     Text("Builds a stretch and massage gun sequence for this workout's muscle groups and saves it to the Recovery tab.")
                 }
             }
-            .environment(\.editMode, .constant(.active))
+            // Note: no forced editMode here. A Form locked in .active edit mode
+            // suppresses swipe-to-delete and interferes with text fields and
+            // steppers inside the reorderable rows -- it made the editor feel
+            // broken. EditButton in the section header toggles it on demand.
             .navigationTitle(isNew ? "New Workout" : "Edit Workout")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
