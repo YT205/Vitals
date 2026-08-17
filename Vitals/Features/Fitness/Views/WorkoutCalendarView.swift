@@ -24,8 +24,9 @@ struct WorkoutCalendarView: View {
         Set(sessions.map { calendar.startOfDay(for: $0.startedAt) })
     }
 
-    /// The grid: leading blanks for alignment, then every day of the month.
-    private var gridDays: [Date?] {
+    /// The month split into whole weeks: leading and trailing `nil`s pad each
+    /// week to exactly 7 slots so every `GridRow` has the same shape.
+    private var weeks: [[Date?]] {
         guard
             let monthInterval = calendar.dateInterval(of: .month, for: monthAnchor),
             let dayCount = calendar.range(of: .day, in: .month, for: monthAnchor)?.count
@@ -38,7 +39,13 @@ struct WorkoutCalendarView: View {
         for offset in 0..<dayCount {
             days.append(calendar.date(byAdding: .day, value: offset, to: monthInterval.start))
         }
-        return days
+        while days.count % 7 != 0 {
+            days.append(nil)
+        }
+
+        return stride(from: 0, to: days.count, by: 7).map {
+            Array(days[$0..<min($0 + 7, days.count)])
+        }
     }
 
     private var weekdaySymbols: [String] {
@@ -58,18 +65,31 @@ struct WorkoutCalendarView: View {
         VStack(spacing: 12) {
             header
 
-            LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 7), spacing: 6) {
-                ForEach(weekdaySymbols, id: \.self) { symbol in
-                    Text(symbol)
-                        .font(.caption2.weight(.semibold))
-                        .foregroundStyle(.tertiary)
+            // A non-lazy Grid, on purpose. A LazyVGrid inside a self-sizing List
+            // row measures against the List's size proposal while the row sizes
+            // against the grid -- a feedback loop UIKit kills with a fatal
+            // "recursive layout loop". A fixed month of cells doesn't need
+            // laziness; Grid resolves in a single deterministic pass.
+            Grid(horizontalSpacing: 4, verticalSpacing: 6) {
+                GridRow {
+                    ForEach(weekdaySymbols, id: \.self) { symbol in
+                        Text(symbol)
+                            .font(.caption2.weight(.semibold))
+                            .foregroundStyle(.tertiary)
+                            .frame(maxWidth: .infinity)
+                    }
                 }
 
-                ForEach(Array(gridDays.enumerated()), id: \.offset) { _, day in
-                    if let day {
-                        dayCell(day)
-                    } else {
-                        Color.clear.frame(height: 34)
+                ForEach(Array(weeks.enumerated()), id: \.offset) { _, week in
+                    GridRow {
+                        ForEach(Array(week.enumerated()), id: \.offset) { _, day in
+                            if let day {
+                                dayCell(day)
+                            } else {
+                                Color.clear
+                                    .frame(maxWidth: .infinity, minHeight: 34)
+                            }
+                        }
                     }
                 }
             }
