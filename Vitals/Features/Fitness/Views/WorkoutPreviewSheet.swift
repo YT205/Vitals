@@ -69,8 +69,9 @@ struct WorkoutPreviewSheet: View {
         .presentationDragIndicator(.visible)
     }
 
+    /// Same table layout as the live workout rows, read-only.
     private func itemRow(_ item: TemplateItem) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 8) {
             HStack {
                 Text(item.exerciseName)
                     .font(.body.weight(.medium))
@@ -80,32 +81,51 @@ struct WorkoutPreviewSheet: View {
                     .foregroundStyle(.secondary)
             }
 
-            // The plan, one line per set, matching the workout screen.
+            // Column header, matching SetHeaderRow.
+            HStack(spacing: 10) {
+                Text("Set")
+                    .frame(width: 24)
+                Text(settings.weightUnit.label.uppercased())
+                    .frame(maxWidth: .infinity)
+                Text("")
+                    .font(.caption)
+                Text("REPS")
+                    .frame(maxWidth: .infinity)
+            }
+            .font(.caption2.weight(.semibold))
+            .foregroundStyle(.tertiary)
+
             ForEach(item.displayPlan, id: \.setNumber) { planSet in
                 HStack(spacing: 10) {
                     Text("\(planSet.setNumber)")
-                        .font(.caption2.weight(.semibold))
+                        .font(.caption.weight(.semibold))
                         .foregroundStyle(.secondary)
-                        .frame(width: 20, height: 20)
-                        .background(Circle().fill(.gray.opacity(0.12)))
+                        .frame(width: 24, height: 24)
+                        .background(Circle().fill(.gray.opacity(0.15)))
 
-                    if planSet.weightKg > 0 {
-                        Text(settings.formattedWeight(fromKilograms: planSet.weightKg))
-                            .font(.callout)
-                    } else {
-                        Text("--")
-                            .font(.callout)
-                            .foregroundStyle(.tertiary)
-                    }
+                    Text(
+                        planSet.weightKg > 0
+                            ? settings.displayWeight(fromKilograms: planSet.weightKg)
+                                .formatted(.number.precision(.fractionLength(0...1)))
+                            : "--"
+                    )
+                    .font(.callout)
+                    .foregroundStyle(planSet.weightKg > 0 ? .primary : .tertiary)
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 4)
+                    .background(.background.secondary, in: .rect(cornerRadius: 7))
 
                     Text("x")
-                        .font(.caption2)
+                        .font(.caption)
                         .foregroundStyle(.tertiary)
 
-                    Text("\(planSet.reps) reps")
+                    Text("\(planSet.reps)")
                         .font(.callout)
-
-                    Spacer()
+                        .multilineTextAlignment(.center)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 4)
+                        .background(.background.secondary, in: .rect(cornerRadius: 7))
                 }
             }
         }

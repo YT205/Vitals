@@ -18,7 +18,10 @@ struct ActiveWorkoutView: View {
     /// back on finish.
     var template: WorkoutTemplate?
 
-    @State private var model = ActiveWorkoutViewModel()
+    /// Shared, app-lived: the timer keeps running when this screen is popped
+    /// and picks up exactly where it was on return.
+    private var model: ActiveWorkoutViewModel { .shared }
+
     @State private var showingFinishSheet = false
     /// Set by the sheet, executed in `onDismiss` -- never during dismissal.
     @State private var pendingAction: FinishAction?
@@ -71,8 +74,18 @@ struct ActiveWorkoutView: View {
                                 isTiming: model.isTiming(entry),
                                 elapsedText: model.dialValueText,
                                 onStart: { model.startSet(entry, in: session) },
-                                onFinish: { model.finishSet(entry) },
-                                onReset: { model.resetSet(entry) }
+                                // Finishing the last set folds the exercise;
+                                // animate so it slides rather than snaps.
+                                onFinish: {
+                                    withAnimation(.snappy) {
+                                        model.finishSet(entry)
+                                    }
+                                },
+                                onReset: {
+                                    withAnimation(.snappy) {
+                                        model.resetSet(entry)
+                                    }
+                                }
                             )
                             .swipeActions(edge: .trailing) {
                                 // Swipe away sets you skipped -- anything left
@@ -101,7 +114,9 @@ struct ActiveWorkoutView: View {
                             Spacer()
                             if group.isComplete {
                                 Button {
-                                    manuallyExpanded.remove(group.name)
+                                    withAnimation(.snappy) {
+                                        _ = manuallyExpanded.remove(group.name)
+                                    }
                                 } label: {
                                     Label("Collapse", systemImage: "chevron.up")
                                         .font(.caption2)
@@ -259,7 +274,9 @@ struct ActiveWorkoutView: View {
 
     private func collapsedRow(_ group: ExerciseGroup) -> some View {
         Button {
-            manuallyExpanded.insert(group.name)
+            withAnimation(.snappy) {
+                _ = manuallyExpanded.insert(group.name)
+            }
         } label: {
             HStack(spacing: 10) {
                 Image(systemName: "checkmark.circle.fill")

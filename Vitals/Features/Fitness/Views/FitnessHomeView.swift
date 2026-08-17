@@ -97,14 +97,6 @@ struct FitnessHomeView: View {
                 }
 
                 Section {
-                    Button {
-                        createTemplate()
-                    } label: {
-                        Label("New Workout", systemImage: "plus")
-                    }
-                }
-
-                Section {
                     WorkoutCalendarView()
                         .padding(.vertical, 4)
                 } header: {
@@ -112,6 +104,16 @@ struct FitnessHomeView: View {
                 }
             }
             .navigationTitle("Fitness")
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        createTemplate()
+                    } label: {
+                        Image(systemName: "plus")
+                    }
+                    .accessibilityLabel("New workout")
+                }
+            }
             .navigationDestination(item: $launch) { launch in
                 ActiveWorkoutView(session: launch.session, template: launch.template)
             }

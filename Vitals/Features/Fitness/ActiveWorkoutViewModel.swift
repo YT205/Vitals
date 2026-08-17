@@ -11,6 +11,15 @@ import SwiftUI
 @MainActor
 @Observable
 final class ActiveWorkoutViewModel {
+    /// One shared instance, because at most one workout runs at a time.
+    ///
+    /// App-lived on purpose: the timer belongs to the *workout*, not the
+    /// workout screen. Leaving the screen mid-rest and coming back finds the
+    /// clock exactly where it should be.
+    static let shared = ActiveWorkoutViewModel()
+
+    private init() {}
+
     /// The persistent dial cycles through these. One phase at a time:
     /// lifting (`set`), resting (`rest`), past the planned rest (`overtime`),
     /// or between exercises (`idle`).
@@ -35,6 +44,12 @@ final class ActiveWorkoutViewModel {
     private(set) var restTotal: Int = 0
     /// Seconds past the planned rest (counts up, dial turns orange).
     private(set) var overtimeSeconds: Int = 0
+
+    // Timing is anchored to wall-clock dates, not accumulated ticks: the tick
+    // loop just re-derives the displayed values from these. Suspend the app
+    // for two minutes mid-rest and the dial is correct the moment it returns.
+    private var setAnchor: Date?
+    private var restEndsAt: Date?
 
     private var tickTask: Task<Void, Never>?
 
@@ -115,9 +130,12 @@ final class ActiveWorkoutViewModel {
             }
         }
 
-        entry.startedAt = .now
+        let now = Date.now
+        entry.startedAt = now
         activeSetID = entry.persistentModelID
+        setAnchor = now
         setElapsed = 0
+        restEndsAt = nil
         restRemaining = 0
         overtimeSeconds = 0
         phase = .set
@@ -159,13 +177,16 @@ final class ActiveWorkoutViewModel {
         }
         restTotal = seconds
         restRemaining = seconds
+        restEndsAt = Date.now.addingTimeInterval(TimeInterval(seconds))
+        setAnchor = nil
         overtimeSeconds = 0
         phase = .rest
         startTicking()
     }
 
     func addRest(seconds: Int) {
-        guard phase == .rest else { return }
+        guard phase == .rest, let deadline = restEndsAt else { return }
+        restEndsAt = deadline.addingTimeInterval(TimeInterval(seconds))
         restRemaining += seconds
         restTotal += seconds
     }
@@ -177,6 +198,8 @@ final class ActiveWorkoutViewModel {
 
     private func goIdle() {
         phase = .idle
+        setAnchor = nil
+        restEndsAt = nil
         restRemaining = 0
         restTotal = 0
         overtimeSeconds = 0
@@ -185,9 +208,11 @@ final class ActiveWorkoutViewModel {
 
     // MARK: - The clock
 
-    /// One shared 1 Hz loop drives every phase; each tick advances whichever
-    /// phase is current. Restarting is idempotent.
+    /// One shared 1 Hz loop re-derives the display from the date anchors; it
+    /// never accumulates, so missed ticks (backgrounding, screen changes)
+    /// can't drift the clock. Restarting is idempotent.
     private func startTicking() {
+        refreshFromAnchors()
         guard tickTask == nil else { return }
         tickTask = Task { [weak self] in
             while true {
@@ -195,27 +220,36 @@ final class ActiveWorkoutViewModel {
                 if Task.isCancelled { return }
                 guard let self else { return }
 
-                switch self.phase {
-                case .idle:
+                if self.phase == .idle {
                     // Nothing to advance; park the loop until the next start.
                     self.tickTask = nil
                     return
-                case .set:
-                    self.setElapsed += 1
-                case .rest:
-                    if self.restRemaining > 1 {
-                        self.restRemaining -= 1
-                    } else {
-                        // Planned rest is up: flip to counting up, in orange.
-                        self.restRemaining = 0
-                        self.overtimeSeconds = 0
-                        self.phase = .overtime
-                        Haptics.routineComplete()
-                    }
-                case .overtime:
-                    self.overtimeSeconds += 1
                 }
+                self.refreshFromAnchors()
             }
+        }
+    }
+
+    /// Recomputes the published values from wall-clock time.
+    private func refreshFromAnchors() {
+        switch phase {
+        case .idle:
+            break
+        case .set:
+            setElapsed = max(0, Int(Date.now.timeIntervalSince(setAnchor ?? .now)))
+        case .rest:
+            let remaining = Int((restEndsAt?.timeIntervalSinceNow ?? 0).rounded(.up))
+            if remaining > 0 {
+                restRemaining = remaining
+            } else {
+                // Planned rest is up: flip to counting up, in orange.
+                restRemaining = 0
+                phase = .overtime
+                refreshFromAnchors()
+                Haptics.routineComplete()
+            }
+        case .overtime:
+            overtimeSeconds = max(0, Int(-(restEndsAt?.timeIntervalSinceNow ?? 0)))
         }
     }
 
@@ -310,6 +344,8 @@ final class ActiveWorkoutViewModel {
         }
 
         isSaving = false
+        activeSetID = nil
+        heartRate = nil
     }
 
     /// Copies performed weights and reps back onto the matching plan sets
@@ -344,6 +380,9 @@ final class ActiveWorkoutViewModel {
     func discardAfterDismiss(session: WorkoutSession, context: ModelContext) {
         goIdle()
         stopTicking()
+        activeSetID = nil
+        heartRate = nil
+        saveError = nil
         let target = session
         Task {
             try? await Task.sleep(for: .seconds(0.7))
