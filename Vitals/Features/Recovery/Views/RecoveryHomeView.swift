@@ -5,6 +5,7 @@ import SwiftUI
 /// suggestions driven by what you actually trained in the last few days.
 struct RecoveryHomeView: View {
     @Environment(\.modelContext) private var context
+    @Environment(AppSettings.self) private var settings
 
     @Query(sort: \RecoveryRoutine.name)
     private var routines: [RecoveryRoutine]
@@ -42,6 +43,8 @@ struct RecoveryHomeView: View {
 
         return routines
             .compactMap { routine -> (RecoveryRoutine, [MuscleGroup])? in
+                // Swiped-away suggestions stay hidden for the 3-day cycle.
+                guard !settings.isSuggestionDismissed(routine.name) else { return nil }
                 let matched = routine.targetGroups.filter { trained.keys.contains($0) }
                 guard !matched.isEmpty else { return nil }
                 return (routine, matched)
@@ -85,11 +88,27 @@ struct RecoveryHomeView: View {
                         Section {
                             ForEach(suggested, id: \.routine.id) { suggestion in
                                 suggestedRow(suggestion.routine, matched: suggestion.matched)
+                                    // Hiding snoozes the suggestion; the routine
+                                    // itself stays in the library below.
+                                    .swipeActions(edge: .trailing) {
+                                        Button {
+                                            settings.dismissSuggestion(suggestion.routine.name)
+                                        } label: {
+                                            Label("Hide", systemImage: "eye.slash")
+                                        }
+                                        .tint(.gray)
+                                    }
+                            }
+                            .onDelete { offsets in
+                                // Edit-mode minus circles hide, they don't delete.
+                                for index in offsets {
+                                    settings.dismissSuggestion(suggested[index].routine.name)
+                                }
                             }
                         } header: {
                             Label("Suggested for You", systemImage: "sparkles")
                         } footer: {
-                            Text("Based on the muscle groups you trained in the last 3 days.")
+                            Text("Based on the muscle groups you trained in the last 3 days. Swipe a suggestion away to hide it for this cycle -- the routine stays in your library.")
                         }
                     }
 

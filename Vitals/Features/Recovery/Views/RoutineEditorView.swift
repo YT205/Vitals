@@ -86,9 +86,13 @@ struct RoutineEditorView: View {
                             Text(routine.formattedDuration)
                                 .foregroundStyle(.secondary)
                         }
+                        if routine.steps.count > 1 {
+                            EditButton()
+                                .font(.caption)
+                        }
                     }
                 } footer: {
-                    Text("Turn on Per Side and the player runs the timer twice, once for each side.")
+                    Text("Swipe left to remove a step. Tap Edit to drag steps into a new order. Per Side runs the timer twice, once for each side.")
                 }
 
                 Section("Notes") {
@@ -105,9 +109,6 @@ struct RoutineEditorView: View {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") { save() }
                         .disabled(!canSave)
-                }
-                ToolbarItem(placement: .topBarLeading) {
-                    EditButton()
                 }
             }
         }

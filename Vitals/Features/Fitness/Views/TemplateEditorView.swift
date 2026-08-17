@@ -12,7 +12,8 @@ struct TemplateEditorView: View {
     let isNew: Bool
 
     @State private var showingPicker = false
-    @State private var createdRecoveryRoutine = false
+    @State private var createdStretchRoutine = false
+    @State private var createdMassageRoutine = false
 
     private var canSave: Bool {
         !template.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -67,20 +68,38 @@ struct TemplateEditorView: View {
 
                 Section {
                     Button {
-                        createRecoveryRoutine()
+                        createRecoveryRoutine(kind: .stretching)
+                        createdStretchRoutine = true
                     } label: {
                         Label(
-                            createdRecoveryRoutine
-                                ? "Recovery Routine Created"
-                                : "Create Recovery Routine",
-                            systemImage: createdRecoveryRoutine
+                            createdStretchRoutine
+                                ? "Stretch Routine Created"
+                                : "Create Stretch Routine",
+                            systemImage: createdStretchRoutine
                                 ? "checkmark.circle.fill"
-                                : "figure.cooldown"
+                                : "figure.flexibility"
                         )
                     }
-                    .disabled(template.items.isEmpty || createdRecoveryRoutine)
+                    .disabled(template.items.isEmpty || createdStretchRoutine)
+
+                    Button {
+                        createRecoveryRoutine(kind: .massageGun)
+                        createdMassageRoutine = true
+                    } label: {
+                        Label(
+                            createdMassageRoutine
+                                ? "Massage Gun Routine Created"
+                                : "Create Massage Gun Routine",
+                            systemImage: createdMassageRoutine
+                                ? "checkmark.circle.fill"
+                                : "waveform.badge.magnifyingglass"
+                        )
+                    }
+                    .disabled(template.items.isEmpty || createdMassageRoutine)
+                } header: {
+                    Text("Recovery")
                 } footer: {
-                    Text("Builds a stretch and massage gun sequence for this workout's muscle groups and saves it to the Recovery tab.")
+                    Text("Each builds a sequence for this workout's muscle groups and saves it to the Recovery tab. Cancelling this editor removes them again.")
                 }
             }
             // Note: no forced editMode here. A Form locked in .active edit mode
@@ -158,15 +177,16 @@ struct TemplateEditorView: View {
 
     // MARK: - Actions
 
-    private func createRecoveryRoutine() {
+    private func createRecoveryRoutine(kind: RecoveryKind) {
         let trimmed = template.name.trimmingCharacters(in: .whitespacesAndNewlines)
         let baseName = trimmed.isEmpty ? "Workout" : trimmed
+        let suffix = kind == .massageGun ? "Massage Gun" : "Stretch"
         let routine = RecoveryLibrary.generatedRoutine(
-            named: "\(baseName) Recovery",
-            for: templateGroups
+            named: "\(baseName) \(suffix)",
+            for: templateGroups,
+            kind: kind
         )
         context.insert(routine)
-        createdRecoveryRoutine = true
     }
 
     private func addExercises(_ exercises: [Exercise]) {

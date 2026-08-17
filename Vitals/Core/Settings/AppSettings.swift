@@ -57,6 +57,7 @@ final class AppSettings {
         static let hiddenVitals = "settings.hiddenVitals"
         static let showSleepCard = "settings.showSleepCard"
         static let appearance = "settings.appearance"
+        static let dismissedSuggestions = "settings.dismissedSuggestions"
     }
 
     private let defaults: UserDefaults
@@ -107,6 +108,29 @@ final class AppSettings {
         didSet { defaults.set(appearance.rawValue, forKey: Key.appearance) }
     }
 
+    /// Recovery suggestions the user swiped away, keyed by routine name.
+    /// A dismissal snoozes the suggestion rather than deleting anything.
+    var dismissedSuggestions: [String: Date] {
+        didSet { defaults.set(dismissedSuggestions, forKey: Key.dismissedSuggestions) }
+    }
+
+    /// Snoozes a suggestion. Entries older than a week are pruned on the way.
+    func dismissSuggestion(_ routineName: String) {
+        let weekAgo = Date.now.addingTimeInterval(-7 * 24 * 3600)
+        var updated = dismissedSuggestions.filter { $0.value > weekAgo }
+        updated[routineName] = .now
+        dismissedSuggestions = updated
+    }
+
+    /// `true` while a dismissal is still fresh. Three days matches the
+    /// training window that drives suggestions, so a hidden routine stays
+    /// hidden for the current cycle and naturally comes back.
+    func isSuggestionDismissed(_ routineName: String, days: Int = 3) -> Bool {
+        guard let dismissed = dismissedSuggestions[routineName] else { return false }
+        let cutoff = Calendar.current.date(byAdding: .day, value: -days, to: .now) ?? .now
+        return dismissed > cutoff
+    }
+
     func isVisible(_ kind: VitalKind) -> Bool {
         !hiddenVitals.contains(kind.rawValue)
     }
@@ -154,6 +178,9 @@ final class AppSettings {
         appearance = Appearance(
             rawValue: defaults.string(forKey: Key.appearance) ?? ""
         ) ?? .system
+
+        dismissedSuggestions =
+            (defaults.dictionary(forKey: Key.dismissedSuggestions) as? [String: Date]) ?? [:]
     }
 
     // MARK: - Weight helpers

@@ -142,11 +142,15 @@ enum RecoveryLibrary {
         }
     }
 
-    /// Builds a stretch + massage routine covering the given muscle groups,
-    /// used by "Create Recovery Routine" in the workout editor.
+    /// Builds a routine covering the given muscle groups, used by the
+    /// "Create ... Routine" buttons in the workout editor.
+    ///
+    /// `.massageGun` builds from the massage bank, anything else from the
+    /// stretch bank. Steps are deduped and kept in anatomical order.
     static func generatedRoutine(
         named name: String,
-        for groups: [MuscleGroup]
+        for groups: [MuscleGroup],
+        kind: RecoveryKind = .stretching
     ) -> RecoveryRoutine {
         // Preserve a stable, sensible order and drop duplicates.
         let ordered = MuscleGroup.allCases.filter { groups.contains($0) }
@@ -154,21 +158,26 @@ enum RecoveryLibrary {
         var steps: [(String, Int, Bool, String)] = []
         var seen = Set<String>()
         for group in ordered {
-            for step in stretchSteps(for: group) where !seen.contains(step.0) {
-                seen.insert(step.0)
-                steps.append(step)
-            }
-        }
-        for group in ordered {
-            for step in massageSteps(for: group) where !seen.contains(step.0) {
+            let bank = kind == .massageGun
+                ? massageSteps(for: group)
+                : stretchSteps(for: group)
+            for step in bank where !seen.contains(step.0) {
                 seen.insert(step.0)
                 steps.append(step)
             }
         }
 
+        // A core-only day has no massage steps (no gun on the abdomen);
+        // fall back to a light general pass rather than an empty routine.
+        if steps.isEmpty {
+            steps = kind == .massageGun
+                ? massageSteps(for: .fullBody)
+                : stretchSteps(for: .fullBody)
+        }
+
         return build(
             name: name,
-            kind: .stretching,
+            kind: kind,
             notes: "Generated from your workout. Edit steps freely -- it won't regenerate on its own.",
             targetGroups: ordered,
             steps: steps
