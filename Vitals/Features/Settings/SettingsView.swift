@@ -8,6 +8,18 @@ struct SettingsView: View {
     var body: some View {
         NavigationStack {
             Form {
+                Section("Appearance") {
+                    Picker("Appearance", selection: Binding(
+                        get: { settings.appearance },
+                        set: { settings.appearance = $0 }
+                    )) {
+                        ForEach(AppSettings.Appearance.allCases) { appearance in
+                            Text(appearance.label).tag(appearance)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                }
+
                 Section("Units") {
                     Picker("Weight", selection: Binding(
                         get: { settings.weightUnit },

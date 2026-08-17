@@ -72,7 +72,9 @@ struct WorkoutCalendarView: View {
             // laziness; Grid resolves in a single deterministic pass.
             Grid(horizontalSpacing: 4, verticalSpacing: 6) {
                 GridRow {
-                    ForEach(weekdaySymbols, id: \.self) { symbol in
+                    // ID by position, not letter: veryShortWeekdaySymbols repeats
+                    // "S" and "T", and duplicate ForEach IDs are undefined behavior.
+                    ForEach(Array(weekdaySymbols.enumerated()), id: \.offset) { _, symbol in
                         Text(symbol)
                             .font(.caption2.weight(.semibold))
                             .foregroundStyle(.tertiary)

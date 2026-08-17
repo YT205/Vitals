@@ -23,6 +23,10 @@ struct FitnessHomeView: View {
     @State private var draftTemplate: WorkoutTemplate?
     /// Set when a delete is requested; the confirmation dialog acts on it.
     @State private var templatePendingDelete: WorkoutTemplate?
+    /// The workout being previewed in the bottom sheet.
+    @State private var previewTemplate: WorkoutTemplate?
+    /// Chosen in the preview sheet; executed after it dismisses.
+    @State private var pendingPreview: (action: WorkoutPreviewAction, template: WorkoutTemplate)?
 
     private var activeSession: WorkoutSession? { activeSessions.first }
 
@@ -100,6 +104,14 @@ struct FitnessHomeView: View {
             .sheet(item: $draftTemplate) { template in
                 TemplateEditorView(template: template, isNew: true)
             }
+            .sheet(item: $previewTemplate, onDismiss: handlePreviewAction) { template in
+                WorkoutPreviewSheet(
+                    template: template,
+                    canStart: activeSession == nil
+                ) { action in
+                    pendingPreview = (action, template)
+                }
+            }
             .confirmationDialog(
                 "Delete this workout?",
                 isPresented: Binding(
@@ -145,8 +157,9 @@ struct FitnessHomeView: View {
     }
 
     private func templateRow(_ template: WorkoutTemplate) -> some View {
+        // Tapping opens the preview sheet; starting happens from there.
         Button {
-            start(from: template)
+            previewTemplate = template
         } label: {
             HStack {
                 VStack(alignment: .leading, spacing: 3) {
@@ -162,13 +175,20 @@ struct FitnessHomeView: View {
                     }
                 }
                 Spacer()
-                Image(systemName: "play.circle.fill")
-                    .font(.title2)
-                    .foregroundStyle(.tint)
+                Image(systemName: "chevron.up.circle")
+                    .font(.title3)
+                    .foregroundStyle(.secondary)
             }
         }
-        .disabled(activeSession != nil)
-        // Swipe left: Delete at the edge, Edit next to it. Delete asks first.
+        // Swipe right for Edit, swipe left for Delete -- opposite edges.
+        .swipeActions(edge: .leading) {
+            Button {
+                editingTemplate = template
+            } label: {
+                Label("Edit", systemImage: "pencil")
+            }
+            .tint(.blue)
+        }
         .swipeActions(edge: .trailing) {
             Button {
                 templatePendingDelete = template
@@ -176,13 +196,6 @@ struct FitnessHomeView: View {
                 Label("Delete", systemImage: "trash")
             }
             .tint(.red)
-
-            Button {
-                editingTemplate = template
-            } label: {
-                Label("Edit", systemImage: "pencil")
-            }
-            .tint(.blue)
         }
         // Long-press for the same options.
         .contextMenu {
@@ -200,6 +213,20 @@ struct FitnessHomeView: View {
     }
 
     // MARK: - Actions
+
+    /// Runs after the preview sheet fully dismisses, so opening the editor or
+    /// pushing the workout never overlaps an in-flight sheet transition.
+    private func handlePreviewAction() {
+        guard let pending = pendingPreview else { return }
+        pendingPreview = nil
+
+        switch pending.action {
+        case .edit:
+            editingTemplate = pending.template
+        case .start:
+            start(from: pending.template)
+        }
+    }
 
     private func createTemplate() {
         let template = WorkoutTemplate(name: "")

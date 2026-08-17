@@ -30,6 +30,22 @@ final class AppSettings {
         var toMillilitres: Double { self == .ounces ? 29.573_53 : 1 }
     }
 
+    enum Appearance: String, CaseIterable, Identifiable, Sendable {
+        case system
+        case light
+        case dark
+
+        var id: String { rawValue }
+
+        var label: String {
+            switch self {
+            case .system: "System"
+            case .light: "Light"
+            case .dark: "Dark"
+            }
+        }
+    }
+
     private enum Key {
         static let weightUnit = "settings.weightUnit"
         static let volumeUnit = "settings.volumeUnit"
@@ -40,6 +56,7 @@ final class AppSettings {
         static let reminderIntervalMinutes = "settings.reminderIntervalMinutes"
         static let hiddenVitals = "settings.hiddenVitals"
         static let showSleepCard = "settings.showSleepCard"
+        static let appearance = "settings.appearance"
     }
 
     private let defaults: UserDefaults
@@ -85,6 +102,11 @@ final class AppSettings {
         didSet { defaults.set(showSleepCard, forKey: Key.showSleepCard) }
     }
 
+    /// Light/dark override. `.system` follows the phone's setting.
+    var appearance: Appearance {
+        didSet { defaults.set(appearance.rawValue, forKey: Key.appearance) }
+    }
+
     func isVisible(_ kind: VitalKind) -> Bool {
         !hiddenVitals.contains(kind.rawValue)
     }
@@ -128,6 +150,10 @@ final class AppSettings {
         showSleepCard = defaults.object(forKey: Key.showSleepCard) == nil
             ? true
             : defaults.bool(forKey: Key.showSleepCard)
+
+        appearance = Appearance(
+            rawValue: defaults.string(forKey: Key.appearance) ?? ""
+        ) ?? .system
     }
 
     // MARK: - Weight helpers
