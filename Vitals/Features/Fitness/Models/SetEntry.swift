@@ -20,6 +20,12 @@ final class SetEntry {
     var isDone: Bool = false
     /// Rate of perceived exertion, 1...10. Optional, ignore it if you don't care.
     var rpe: Double?
+    /// When the set timer was started. `nil` for sets logged without timing.
+    var startedAt: Date?
+    /// How long the set took, in seconds. Zero for untimed sets.
+    var durationSeconds: Double = 0
+    /// Rest to take after this set, in seconds (copied from the template item).
+    var restSeconds: Int = 90
     var completedAt: Date?
 
     var session: WorkoutSession?
@@ -31,7 +37,8 @@ final class SetEntry {
         setNumber: Int = 1,
         weightKg: Double = 0,
         reps: Int = 0,
-        isWarmup: Bool = false
+        isWarmup: Bool = false,
+        restSeconds: Int = 90
     ) {
         self.exerciseName = exerciseName
         self.muscleGroup = muscleGroup
@@ -40,6 +47,7 @@ final class SetEntry {
         self.weightKg = weightKg
         self.reps = reps
         self.isWarmup = isWarmup
+        self.restSeconds = restSeconds
     }
 
     var volumeKg: Double { weightKg * Double(reps) }
@@ -59,5 +67,7 @@ final class SetEntry {
     func markNotDone() {
         isDone = false
         completedAt = nil
+        startedAt = nil
+        durationSeconds = 0
     }
 }

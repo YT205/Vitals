@@ -95,8 +95,35 @@ enum VitalsModelContainer {
             for routine in RecoveryLibrary.starterRoutines() {
                 context.insert(routine)
             }
+        } else if trackVersion {
+            backfillRoutineTargets(context)
         }
 
         try? context.save()
+    }
+
+    private static let routineTargetsKey = "seed.recoveryTargetsVersion"
+
+    /// One-shot: installs that seeded routines before `targetGroups` existed get
+    /// targets backfilled by name, so the Suggested section works for them too.
+    /// Routines you created or renamed are untouched.
+    private static func backfillRoutineTargets(_ context: ModelContext) {
+        guard UserDefaults.standard.integer(forKey: routineTargetsKey) < 1 else { return }
+
+        let known: [String: [MuscleGroup]] = [
+            "Post Leg Day Stretch": [.legs, .glutes, .calves],
+            "Post Push Day Stretch": [.chest, .shoulders, .triceps],
+            "Massage Gun: Lower Body": [.legs, .glutes, .calves],
+            "Massage Gun: Upper Body": [.chest, .back, .shoulders, .biceps, .triceps],
+        ]
+
+        let routines = (try? context.fetch(FetchDescriptor<RecoveryRoutine>())) ?? []
+        for routine in routines where routine.targetGroups.isEmpty {
+            if let targets = known[routine.name] {
+                routine.targetGroups = targets
+            }
+        }
+
+        UserDefaults.standard.set(1, forKey: routineTargetsKey)
     }
 }

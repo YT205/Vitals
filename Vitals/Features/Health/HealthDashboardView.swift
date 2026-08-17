@@ -18,14 +18,30 @@ struct HealthDashboardView: View {
                         unavailableNotice
                     }
 
-                    SleepCard(summary: model.sleep)
+                    NavigationLink {
+                        SleepDetailView(lastNight: model.sleep)
+                    } label: {
+                        SleepCard(summary: model.sleep)
+                    }
+                    .buttonStyle(.plain)
 
                     ForEach(VitalSection.allCases) { section in
                         VStack(alignment: .leading, spacing: 12) {
                             SectionHeader(title: section.title)
                             LazyVGrid(columns: columns, spacing: 12) {
                                 ForEach(model.vitals(in: section)) { kind in
-                                    VitalCard(kind: kind, reading: model.reading(for: kind))
+                                    NavigationLink {
+                                        VitalDetailView(
+                                            kind: kind,
+                                            latest: model.reading(for: kind)
+                                        )
+                                    } label: {
+                                        VitalCard(
+                                            kind: kind,
+                                            reading: model.reading(for: kind)
+                                        )
+                                    }
+                                    .buttonStyle(.plain)
                                 }
                             }
                         }

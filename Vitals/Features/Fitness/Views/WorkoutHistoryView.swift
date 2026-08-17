@@ -107,6 +107,9 @@ struct WorkoutDetailView: View {
                         caption: "Volume"
                     )
                     StatBlock(value: "\(session.totalReps)", caption: "Reps")
+                    if session.totalSetSeconds > 0 {
+                        StatBlock(value: session.formattedSetTime, caption: "In Set")
+                    }
                 }
 
                 if let bestSet {
@@ -138,17 +141,16 @@ struct WorkoutDetailView: View {
                             Text(entry.isWarmup ? "Warmup" : "Set \(entry.setNumber)")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
+                            if entry.durationSeconds > 0 {
+                                Text(WorkoutSession.formatMinutesSeconds(entry.durationSeconds))
+                                    .font(.caption2.monospacedDigit())
+                                    .foregroundStyle(.tertiary)
+                            }
                             Spacer()
                             Text("\(settings.formattedWeight(fromKilograms: entry.weightKg)) x \(entry.reps)")
                                 .font(.callout.weight(.medium))
                         }
                     }
-                }
-            }
-
-            if !session.notes.isEmpty {
-                Section("Notes") {
-                    Text(session.notes)
                 }
             }
         }

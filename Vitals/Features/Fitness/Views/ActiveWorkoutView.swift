@@ -58,9 +58,14 @@ struct ActiveWorkoutView: View {
                 Section {
                     SetHeaderRow()
                     ForEach(group.sets) { entry in
-                        SetRowView(entry: entry) {
-                            model.startRest(seconds: settings.defaultRestSeconds)
-                        }
+                        SetRowView(
+                            entry: entry,
+                            isTiming: model.isTiming(entry),
+                            elapsedText: model.formattedSetElapsed,
+                            onStart: { model.startSet(entry, in: session) },
+                            onFinish: { model.finishSet(entry) },
+                            onReset: { model.resetSet(entry) }
+                        )
                         .swipeActions(edge: .trailing) {
                             // Swipe away sets you skipped -- anything left with
                             // data in it gets saved at finish.
@@ -124,31 +129,70 @@ struct ActiveWorkoutView: View {
                 pendingAction = action
             }
         }
+        // Live-ish heart rate for the duration of the workout. The task is
+        // cancelled automatically when this screen goes away.
+        .task { await model.pollHeartRate() }
     }
 
     // MARK: - Header
 
     private var headerCard: some View {
         Card {
-            HStack(alignment: .top) {
-                TimelineView(.periodic(from: .now, by: 1)) { _ in
+            VStack(spacing: 12) {
+                HStack(alignment: .top) {
+                    TimelineView(.periodic(from: .now, by: 1)) { _ in
+                        StatBlock(
+                            value: session.formattedDuration,
+                            caption: "Duration"
+                        )
+                    }
                     StatBlock(
-                        value: session.formattedDuration,
-                        caption: "Duration"
+                        value: liveSetTimeText,
+                        caption: "In Set"
+                    )
+                    StatBlock(
+                        value: settings.formattedWeight(fromKilograms: session.totalVolumeKg),
+                        caption: "Volume"
+                    )
+                    StatBlock(
+                        value: "\(session.completedSets.count)",
+                        caption: "Sets"
                     )
                 }
-                StatBlock(
-                    value: settings.formattedWeight(fromKilograms: session.totalVolumeKg),
-                    caption: "Volume"
-                )
-                StatBlock(
-                    value: "\(session.completedSets.count)",
-                    caption: "Sets Done"
-                )
+
+                Divider()
+
+                HStack(spacing: 6) {
+                    Image(systemName: "heart.fill")
+                        .font(.caption)
+                        .foregroundStyle(.red)
+                        .symbolEffect(.pulse, isActive: model.heartRate != nil)
+
+                    if let heartRate = model.heartRate {
+                        Text("\(Int(heartRate.bpm.rounded())) BPM")
+                            .font(.footnote.weight(.semibold))
+                            .contentTransition(.numericText())
+                        Text("· \(heartRate.date.formatted(date: .omitted, time: .shortened))")
+                            .font(.caption2)
+                            .foregroundStyle(.tertiary)
+                    } else {
+                        Text("No heart rate yet")
+                            .font(.caption2)
+                            .foregroundStyle(.tertiary)
+                    }
+
+                    Spacer()
+                }
             }
         }
         .padding(.horizontal)
         .padding(.top, 8)
+    }
+
+    /// Saved set time plus the live clock if a set is running.
+    private var liveSetTimeText: String {
+        let total = session.totalSetSeconds + Double(model.setElapsed)
+        return WorkoutSession.formatMinutesSeconds(total)
     }
 
     private var restBar: some View {

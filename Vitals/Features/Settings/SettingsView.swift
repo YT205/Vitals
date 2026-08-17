@@ -31,22 +31,6 @@ struct SettingsView: View {
                 }
 
                 Section {
-                    Stepper(
-                        "Rest timer: \(settings.defaultRestSeconds)s",
-                        value: Binding(
-                            get: { settings.defaultRestSeconds },
-                            set: { settings.defaultRestSeconds = $0 }
-                        ),
-                        in: 15...300,
-                        step: 15
-                    )
-                } header: {
-                    Text("Workouts")
-                } footer: {
-                    Text("Default countdown started when you complete a set.")
-                }
-
-                Section {
                     Link(destination: URL(string: "x-apple-health://")!) {
                         Label("Open Apple Health", systemImage: "heart.text.square")
                     }

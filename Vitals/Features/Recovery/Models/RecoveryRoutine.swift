@@ -52,14 +52,23 @@ final class RecoveryRoutine {
     var lastPerformedAt: Date?
     /// How many times you've completed this routine.
     var completionCount: Int = 0
+    /// Muscle groups this routine targets. Drives the "Suggested" section on
+    /// the Recovery tab: routines matching what you trained recently rank first.
+    var targetGroups: [MuscleGroup] = []
 
     @Relationship(deleteRule: .cascade, inverse: \RecoveryStep.routine)
     var steps: [RecoveryStep] = []
 
-    init(name: String, kind: RecoveryKind = .stretching, notes: String = "") {
+    init(
+        name: String,
+        kind: RecoveryKind = .stretching,
+        notes: String = "",
+        targetGroups: [MuscleGroup] = []
+    ) {
         self.name = name
         self.kind = kind
         self.notes = notes
+        self.targetGroups = targetGroups
         self.createdAt = .now
     }
 

@@ -38,7 +38,6 @@ final class AppSettings {
         static let reminderStartHour = "settings.reminderStartHour"
         static let reminderEndHour = "settings.reminderEndHour"
         static let reminderIntervalMinutes = "settings.reminderIntervalMinutes"
-        static let defaultRestSeconds = "settings.defaultRestSeconds"
     }
 
     private let defaults: UserDefaults
@@ -72,11 +71,6 @@ final class AppSettings {
         didSet { defaults.set(reminderIntervalMinutes, forKey: Key.reminderIntervalMinutes) }
     }
 
-    /// Seconds for the rest timer between sets.
-    var defaultRestSeconds: Int {
-        didSet { defaults.set(defaultRestSeconds, forKey: Key.defaultRestSeconds) }
-    }
-
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
 
@@ -101,9 +95,6 @@ final class AppSettings {
 
         let storedInterval = defaults.integer(forKey: Key.reminderIntervalMinutes)
         reminderIntervalMinutes = storedInterval > 0 ? storedInterval : 90
-
-        let storedRest = defaults.integer(forKey: Key.defaultRestSeconds)
-        defaultRestSeconds = storedRest > 0 ? storedRest : 90
     }
 
     // MARK: - Weight helpers

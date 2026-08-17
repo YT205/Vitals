@@ -80,8 +80,11 @@ struct ExerciseChartView: View {
         case heaviest = "Heaviest"
         case oneRepMax = "Est. 1RM"
         case volume = "Volume"
+        case setTime = "Set Time"
 
         var id: String { rawValue }
+        /// Weight metrics convert to the user's unit; time renders as m:ss.
+        var isWeight: Bool { self != .setTime }
     }
 
     @State private var metric: Metric = .heaviest
@@ -95,16 +98,23 @@ struct ExerciseChartView: View {
 
         return byDay
             .map { day, entries in
-                let kilograms: Double = switch metric {
+                let value: Double = switch metric {
                 case .heaviest:
-                    entries.map(\.weightKg).max() ?? 0
+                    settings.displayWeight(fromKilograms: entries.map(\.weightKg).max() ?? 0)
                 case .oneRepMax:
-                    entries.map(\.estimatedOneRepMaxKg).max() ?? 0
+                    settings.displayWeight(
+                        fromKilograms: entries.map(\.estimatedOneRepMaxKg).max() ?? 0
+                    )
                 case .volume:
-                    entries.reduce(0) { $0 + $1.volumeKg }
+                    settings.displayWeight(
+                        fromKilograms: entries.reduce(0) { $0 + $1.volumeKg }
+                    )
+                case .setTime:
+                    entries.reduce(0) { $0 + $1.durationSeconds }
                 }
-                return (date: day, value: settings.displayWeight(fromKilograms: kilograms))
+                return (date: day, value: value)
             }
+            .filter { $0.value > 0 }
             .sorted { $0.date < $1.date }
     }
 
@@ -189,6 +199,9 @@ struct ExerciseChartView: View {
     }
 
     private func format(_ value: Double) -> String {
+        guard metric.isWeight else {
+            return WorkoutSession.formatMinutesSeconds(value)
+        }
         let digits = value.rounded() == value ? 0 : 1
         let number = value.formatted(.number.precision(.fractionLength(digits)))
         return "\(number) \(settings.weightUnit.label)"

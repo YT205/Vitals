@@ -22,18 +22,11 @@ struct FitnessHomeView: View {
     @State private var editingTemplate: WorkoutTemplate?
     @State private var draftTemplate: WorkoutTemplate?
 
-    @State private var heartRate: (bpm: Double, date: Date)?
-    @State private var isLoadingHeartRate = false
-
     private var activeSession: WorkoutSession? { activeSessions.first }
 
     var body: some View {
         NavigationStack {
             List {
-                Section { heartRateCard }
-                    .listRowInsets(EdgeInsets())
-                    .listRowBackground(Color.clear)
-
                 if let activeSession {
                     Section {
                         resumeRow(activeSession)
@@ -104,68 +97,7 @@ struct FitnessHomeView: View {
             .sheet(item: $draftTemplate) { template in
                 TemplateEditorView(template: template, isNew: true)
             }
-            .task { await refreshHeartRate() }
-            .refreshable { await refreshHeartRate() }
         }
-    }
-
-    // MARK: - Heart rate
-
-    private var heartRateCard: some View {
-        Card(padding: 14) {
-            HStack(spacing: 12) {
-                Image(systemName: "heart.fill")
-                    .font(.title2)
-                    .foregroundStyle(.red)
-                    .symbolEffect(.pulse, isActive: heartRate != nil)
-
-                VStack(alignment: .leading, spacing: 1) {
-                    if let heartRate {
-                        HStack(alignment: .firstTextBaseline, spacing: 3) {
-                            Text("\(Int(heartRate.bpm.rounded()))")
-                                .font(.title2.weight(.semibold))
-                                .contentTransition(.numericText())
-                            Text("BPM")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                        Text("as of \(heartRate.date.formatted(date: .omitted, time: .shortened))")
-                            .font(.caption2)
-                            .foregroundStyle(.tertiary)
-                    } else {
-                        Text("--")
-                            .font(.title2.weight(.semibold))
-                            .foregroundStyle(.tertiary)
-                        Text("No recent reading from your watch")
-                            .font(.caption2)
-                            .foregroundStyle(.tertiary)
-                    }
-                }
-
-                Spacer()
-
-                Button {
-                    Task { await refreshHeartRate() }
-                } label: {
-                    if isLoadingHeartRate {
-                        ProgressView()
-                    } else {
-                        Image(systemName: "arrow.clockwise")
-                    }
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
-                .accessibilityLabel("Refresh heart rate")
-            }
-        }
-        .padding(.horizontal)
-        .padding(.top, 4)
-    }
-
-    private func refreshHeartRate() async {
-        isLoadingHeartRate = true
-        heartRate = try? await HealthKitService.shared.latestHeartRate()
-        isLoadingHeartRate = false
     }
 
     // MARK: - Rows
@@ -225,6 +157,20 @@ struct FitnessHomeView: View {
             }
             .tint(.blue)
         }
+        // Long-press for the same options -- swipe wasn't discoverable.
+        .contextMenu {
+            Button {
+                editingTemplate = template
+            } label: {
+                Label("Edit Workout", systemImage: "pencil")
+            }
+            Button(role: .destructive) {
+                context.delete(template)
+                try? context.save()
+            } label: {
+                Label("Delete Workout", systemImage: "trash")
+            }
+        }
     }
 
     // MARK: - Actions
@@ -248,7 +194,8 @@ struct FitnessHomeView: View {
                     exerciseOrder: index,
                     setNumber: setNumber,
                     weightKg: item.lastWeightKg,
-                    reps: item.targetReps
+                    reps: item.targetReps,
+                    restSeconds: item.restSeconds
                 )
                 entry.session = session
                 context.insert(entry)

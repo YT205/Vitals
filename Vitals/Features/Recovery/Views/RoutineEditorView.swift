@@ -32,6 +32,36 @@ struct RoutineEditorView: View {
                 }
 
                 Section {
+                    DisclosureGroup {
+                        ForEach(MuscleGroup.allCases) { group in
+                            Toggle(group.label, isOn: Binding(
+                                get: { routine.targetGroups.contains(group) },
+                                set: { isOn in
+                                    if isOn {
+                                        routine.targetGroups.append(group)
+                                    } else {
+                                        routine.targetGroups.removeAll { $0 == group }
+                                    }
+                                }
+                            ))
+                        }
+                    } label: {
+                        HStack {
+                            Text("Target Muscles")
+                            Spacer()
+                            Text(
+                                routine.targetGroups.isEmpty
+                                    ? "None"
+                                    : "\(routine.targetGroups.count)"
+                            )
+                            .foregroundStyle(.secondary)
+                        }
+                    }
+                } footer: {
+                    Text("Routines matching muscles you trained recently show up under Suggested for You.")
+                }
+
+                Section {
                     if routine.steps.isEmpty {
                         Text("No steps yet.")
                             .foregroundStyle(.secondary)

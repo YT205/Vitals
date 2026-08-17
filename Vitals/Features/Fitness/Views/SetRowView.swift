@@ -1,14 +1,23 @@
 import SwiftData
 import SwiftUI
 
-/// One editable set: weight, reps, and a done toggle.
+/// One editable set: weight, reps, and a play/stop timing control.
+///
+/// Flow: tap play to start the set (in-set timer runs), tap stop when you rack
+/// the weight (duration saved, rest countdown starts). A finished set shows a
+/// checkmark; tap it to reset. Timing is optional -- untimed sets with data
+/// still save when the workout finishes.
 struct SetRowView: View {
     @Environment(AppSettings.self) private var settings
 
     @Bindable var entry: SetEntry
-    /// Called when the set flips from not-done to done, so the caller can kick
-    /// off the rest timer.
-    let onComplete: () -> Void
+    /// `true` while this row's set timer is running.
+    let isTiming: Bool
+    /// Live elapsed text for the active set (from the view model's clock).
+    let elapsedText: String
+    let onStart: () -> Void
+    let onFinish: () -> Void
+    let onReset: () -> Void
 
     private var weightBinding: Binding<Double> {
         Binding(
@@ -39,9 +48,10 @@ struct SetRowView: View {
                 .padding(.vertical, 7)
                 .background(.background.secondary, in: .rect(cornerRadius: 8))
 
-            doneButton
+            timingControl
         }
         .opacity(entry.isDone ? 0.6 : 1)
+        .listRowBackground(isTiming ? Color.accentColor.opacity(0.08) : nil)
     }
 
     private var setBadge: some View {
@@ -54,22 +64,55 @@ struct SetRowView: View {
             )
     }
 
-    private var doneButton: some View {
-        Button {
-            if entry.isDone {
-                entry.markNotDone()
-            } else {
-                entry.markDone()
-                onComplete()
+    @ViewBuilder
+    private var timingControl: some View {
+        if entry.isDone {
+            Button {
+                onReset()
+            } label: {
+                VStack(spacing: 1) {
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.title3)
+                        .foregroundStyle(.green)
+                    if entry.durationSeconds > 0 {
+                        Text(WorkoutSession.formatMinutesSeconds(entry.durationSeconds))
+                            .font(.system(size: 9).monospacedDigit())
+                            .foregroundStyle(.secondary)
+                    }
+                }
             }
-        } label: {
-            Image(systemName: entry.isDone ? "checkmark.circle.fill" : "circle")
-                .font(.title3)
-                .foregroundStyle(entry.isDone ? .green : .secondary)
+            .buttonStyle(.plain)
+            .frame(width: 44)
+            .accessibilityLabel("Set complete, tap to reset")
+        } else if isTiming {
+            Button {
+                onFinish()
+            } label: {
+                VStack(spacing: 1) {
+                    Image(systemName: "stop.circle.fill")
+                        .font(.title3)
+                        .foregroundStyle(.red)
+                    Text(elapsedText)
+                        .font(.system(size: 9).monospacedDigit())
+                        .foregroundStyle(.red)
+                        .contentTransition(.numericText())
+                }
+            }
+            .buttonStyle(.plain)
+            .frame(width: 44)
+            .accessibilityLabel("Finish set")
+        } else {
+            Button {
+                onStart()
+            } label: {
+                Image(systemName: "play.circle")
+                    .font(.title3)
+                    .foregroundStyle(.tint)
+            }
+            .buttonStyle(.plain)
+            .frame(width: 44)
+            .accessibilityLabel("Start set")
         }
-        .buttonStyle(.plain)
-        .frame(width: 30)
-        .accessibilityLabel(entry.isDone ? "Mark set incomplete" : "Mark set complete")
     }
 }
 
@@ -88,7 +131,7 @@ struct SetHeaderRow: View {
             Text("REPS")
                 .frame(maxWidth: .infinity)
             Text("")
-                .frame(width: 30)
+                .frame(width: 44)
         }
         .font(.caption2.weight(.semibold))
         .foregroundStyle(.tertiary)

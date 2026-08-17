@@ -61,6 +61,20 @@ final class WorkoutSession {
         completedSets.reduce(0) { $0 + $1.reps }
     }
 
+    /// Total seconds spent actually lifting (sum of timed set durations).
+    var totalSetSeconds: Double {
+        sets.reduce(0) { $0 + $1.durationSeconds }
+    }
+
+    var formattedSetTime: String {
+        Self.formatMinutesSeconds(totalSetSeconds)
+    }
+
+    static func formatMinutesSeconds(_ seconds: Double) -> String {
+        let total = Int(seconds.rounded())
+        return String(format: "%d:%02d", total / 60, total % 60)
+    }
+
     var formattedDuration: String {
         let minutes = Int(duration) / 60
         let hours = minutes / 60

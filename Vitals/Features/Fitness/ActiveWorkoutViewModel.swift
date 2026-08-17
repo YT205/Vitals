@@ -2,21 +2,43 @@ import Foundation
 import Observation
 import SwiftData
 
-/// Owns the transient state of a workout in progress: the rest timer, and the
-/// finishing handshake with SwiftData and HealthKit.
+/// Owns the transient state of a workout in progress: which set is being
+/// timed, the rest countdown, live heart rate, and the finishing handshake
+/// with SwiftData and HealthKit.
 ///
 /// The logged sets themselves live in SwiftData, so nothing here needs to hold
 /// them -- the views bind straight to the model objects.
 @MainActor
 @Observable
 final class ActiveWorkoutViewModel {
+    // MARK: - Set timing
+
+    /// The set currently being performed, if any.
+    private(set) var activeSetID: PersistentIdentifier?
+    /// Seconds since the active set started.
+    private(set) var setElapsed: Int = 0
+
+    private var setTask: Task<Void, Never>?
+
+    // MARK: - Rest timer
+
     /// Seconds left on the rest countdown. Zero means not resting.
     var restRemaining: Int = 0
     var restTotal: Int = 0
+
+    private var restTask: Task<Void, Never>?
+
+    // MARK: - Heart rate
+
+    var heartRate: (bpm: Double, date: Date)?
+
+    // MARK: - Saving
+
     var isSaving = false
     var saveError: String?
 
-    private var restTask: Task<Void, Never>?
+    // No deinit: `deinit` is nonisolated and can't touch main-actor state. All
+    // timer loops capture `self` weakly and return once this object is gone.
 
     var isResting: Bool { restRemaining > 0 }
 
@@ -26,18 +48,74 @@ final class ActiveWorkoutViewModel {
     }
 
     var formattedRest: String {
-        let minutes = restRemaining / 60
-        let seconds = restRemaining % 60
-        return String(format: "%d:%02d", minutes, seconds)
+        WorkoutSession.formatMinutesSeconds(Double(restRemaining))
     }
 
-    // No deinit: `deinit` is nonisolated and can't touch main-actor state. The
-    // rest loop captures `self` weakly and returns once this object is gone (and
-    // also returns on its own when the countdown reaches zero).
+    var formattedSetElapsed: String {
+        WorkoutSession.formatMinutesSeconds(Double(setElapsed))
+    }
+
+    func isTiming(_ entry: SetEntry) -> Bool {
+        activeSetID == entry.persistentModelID
+    }
+
+    // MARK: - Set flow
+
+    /// Begins timing a set. If another set is mid-flight it gets finished
+    /// first, so exactly one set is ever active.
+    func startSet(_ entry: SetEntry, in session: WorkoutSession) {
+        if let activeSetID, activeSetID != entry.persistentModelID {
+            if let current = session.sets.first(where: {
+                $0.persistentModelID == activeSetID
+            }) {
+                finishSet(current)
+            }
+        }
+
+        stopRest()  // lifting now; the rest break is over either way
+        entry.startedAt = .now
+        activeSetID = entry.persistentModelID
+        setElapsed = 0
+
+        setTask?.cancel()
+        setTask = Task { [weak self] in
+            while true {
+                try? await Task.sleep(for: .seconds(1))
+                if Task.isCancelled { return }
+                guard let self, self.activeSetID != nil else { return }
+                self.setElapsed += 1
+            }
+        }
+    }
+
+    /// Stops the set timer, records the duration, marks the set done, and
+    /// starts that exercise's rest countdown.
+    func finishSet(_ entry: SetEntry) {
+        if let start = entry.startedAt {
+            entry.durationSeconds = Date.now.timeIntervalSince(start)
+        }
+        entry.markDone()
+
+        if isTiming(entry) {
+            setTask?.cancel()
+            setTask = nil
+            activeSetID = nil
+            setElapsed = 0
+        }
+
+        startRest(seconds: entry.restSeconds)
+    }
+
+    /// Un-does a completed set (checkmark tapped by mistake). Clears its
+    /// timing so re-running it re-times it.
+    func resetSet(_ entry: SetEntry) {
+        entry.markNotDone()
+    }
 
     // MARK: - Rest timer
 
     func startRest(seconds: Int) {
+        guard seconds > 0 else { return }
         restTask?.cancel()
         restTotal = seconds
         restRemaining = seconds
@@ -66,9 +144,27 @@ final class ActiveWorkoutViewModel {
         restTotal = 0
     }
 
+    // MARK: - Heart rate
+
+    /// Polls HealthKit for the newest heart rate sample until the view goes
+    /// away. During a workout the watch samples much more often than at rest,
+    /// so this stays reasonably fresh even without a watch app.
+    func pollHeartRate(every interval: Duration = .seconds(15)) async {
+        while !Task.isCancelled {
+            heartRate = try? await HealthKitService.shared.latestHeartRate()
+            try? await Task.sleep(for: interval)
+        }
+    }
+
     // MARK: - Set management
 
     func delete(_ entry: SetEntry, context: ModelContext) {
+        if isTiming(entry) {
+            setTask?.cancel()
+            setTask = nil
+            activeSetID = nil
+            setElapsed = 0
+        }
         context.delete(entry)
     }
 
@@ -78,8 +174,8 @@ final class ActiveWorkoutViewModel {
     /// used back onto the template so next time is prefilled.
     ///
     /// Every set with real data (weight or reps entered) is kept and counted,
-    /// whether or not its checkmark was tapped -- the checkmark just drives the
-    /// rest timer. Only rows that are still completely empty are dropped.
+    /// whether or not it was explicitly finished -- timing is optional. Only
+    /// rows that are still completely empty are dropped.
     func finish(
         session: WorkoutSession,
         template: WorkoutTemplate?,
@@ -87,7 +183,17 @@ final class ActiveWorkoutViewModel {
         context: ModelContext,
         health: HealthKitService = .shared
     ) async {
+        // Close out a set still on the clock.
+        if let activeSetID,
+           let current = session.sets.first(where: {
+               $0.persistentModelID == activeSetID
+           }) {
+            finishSet(current)
+        }
         stopRest()
+        setTask?.cancel()
+        setTask = nil
+
         isSaving = true
         saveError = nil
 
@@ -143,6 +249,8 @@ final class ActiveWorkoutViewModel {
     /// object when it dies.
     func discardAfterDismiss(session: WorkoutSession, context: ModelContext) {
         stopRest()
+        setTask?.cancel()
+        setTask = nil
         let target = session
         Task {
             try? await Task.sleep(for: .seconds(0.7))

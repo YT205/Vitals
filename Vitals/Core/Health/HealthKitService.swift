@@ -185,6 +185,157 @@ final class HealthKitService {
         }
     }
 
+    // MARK: - History
+
+    /// One value per day for the last `days` days, for charting.
+    ///
+    /// Sum-style vitals (steps, energy, exercise minutes) get the day's total;
+    /// everything else gets the day's average. Days with no data are omitted.
+    func dailyHistory(
+        for kind: VitalKind,
+        days: Int
+    ) async throws -> [(date: Date, value: Double)] {
+        guard let type = kind.quantityType else { return [] }
+
+        let unit = kind.unit
+        let scale = kind.displayScale
+        let calendar = Calendar.current
+        let end = Date.now
+        let anchor = calendar.startOfDay(for: end)
+        guard let start = calendar.date(byAdding: .day, value: -(days - 1), to: anchor) else {
+            return []
+        }
+
+        let options: HKStatisticsOptions =
+            kind.aggregation == .dailySum ? .cumulativeSum : .discreteAverage
+        let predicate = HKQuery.predicateForSamples(withStart: start, end: end)
+
+        return try await withCheckedThrowingContinuation { continuation in
+            let query = HKStatisticsCollectionQuery(
+                quantityType: type,
+                quantitySamplePredicate: predicate,
+                options: options,
+                anchorDate: anchor,
+                intervalComponents: DateComponents(day: 1)
+            )
+            query.initialResultsHandler = { _, collection, error in
+                if let error {
+                    continuation.resume(throwing: error)
+                    return
+                }
+                var points: [(date: Date, value: Double)] = []
+                collection?.enumerateStatistics(from: start, to: end) { statistics, _ in
+                    let quantity = options == .cumulativeSum
+                        ? statistics.sumQuantity()
+                        : statistics.averageQuantity()
+                    if let value = quantity?.doubleValue(for: unit) {
+                        points.append((date: statistics.startDate, value: value * scale))
+                    }
+                }
+                continuation.resume(returning: points)
+            }
+            store.execute(query)
+        }
+    }
+
+    /// One `SleepSummary` per night for the last `nights` nights, newest last.
+    ///
+    /// A sample belongs to the night it *ended*: everything ending between 6pm
+    /// yesterday and 6pm today counts as "last night". Nights with no sleep
+    /// data are omitted.
+    func sleepHistory(
+        nights: Int
+    ) async throws -> [(night: Date, summary: SleepSummary)] {
+        guard let type = HKCategoryType.categoryType(forIdentifier: .sleepAnalysis) else {
+            throw HealthKitError.missingType("sleepAnalysis")
+        }
+
+        let calendar = Calendar.current
+        let startOfToday = calendar.startOfDay(for: .now)
+        guard let windowStart = calendar.date(
+            byAdding: .day, value: -nights, to: startOfToday
+        ) else { return [] }
+
+        let predicate = HKQuery.predicateForSamples(
+            withStart: windowStart.addingTimeInterval(-6 * 3600),
+            end: .now
+        )
+        let sort = [NSSortDescriptor(key: HKSampleSortIdentifierStartDate, ascending: true)]
+
+        let raw: [(start: Date, end: Date, value: Int)] =
+            try await withCheckedThrowingContinuation { continuation in
+                let query = HKSampleQuery(
+                    sampleType: type,
+                    predicate: predicate,
+                    limit: HKObjectQueryNoLimit,
+                    sortDescriptors: sort
+                ) { _, samples, error in
+                    if let error {
+                        continuation.resume(throwing: error)
+                        return
+                    }
+                    let extracted = (samples ?? []).compactMap { sample ->
+                        (start: Date, end: Date, value: Int)? in
+                        guard let categorySample = sample as? HKCategorySample else {
+                            return nil
+                        }
+                        return (
+                            categorySample.startDate,
+                            categorySample.endDate,
+                            categorySample.value
+                        )
+                    }
+                    continuation.resume(returning: extracted)
+                }
+                store.execute(query)
+            }
+
+        // Bucket by the day the sample ended, shifted 6 hours so a night that
+        // ends at 7am and one that ends at 11pm both land on the same key.
+        var buckets: [Date: SleepSummary] = [:]
+        for sample in raw {
+            let night = calendar.startOfDay(for: sample.end.addingTimeInterval(6 * 3600))
+            var summary = buckets[night] ?? SleepSummary()
+            let duration = sample.end.timeIntervalSince(sample.start)
+            guard let stage = HKCategoryValueSleepAnalysis(rawValue: sample.value) else {
+                continue
+            }
+            switch stage {
+            case .inBed:
+                summary.inBed += duration
+            case .awake:
+                summary.awake += duration
+            case .asleepCore:
+                summary.core += duration
+                summary.asleep += duration
+            case .asleepDeep:
+                summary.deep += duration
+                summary.asleep += duration
+            case .asleepREM:
+                summary.rem += duration
+                summary.asleep += duration
+            case .asleepUnspecified:
+                summary.asleep += duration
+            @unknown default:
+                continue
+            }
+            if stage != .inBed && stage != .awake {
+                if summary.bedtime == nil || sample.start < summary.bedtime! {
+                    summary.bedtime = sample.start
+                }
+                if summary.wakeTime == nil || sample.end > summary.wakeTime! {
+                    summary.wakeTime = sample.end
+                }
+            }
+            buckets[night] = summary
+        }
+
+        return buckets
+            .filter { $0.value.hasData }
+            .sorted { $0.key < $1.key }
+            .map { (night: $0.key, summary: $0.value) }
+    }
+
     // MARK: - Heart rate
 
     /// The newest heart rate sample from the last 4 hours, in BPM.

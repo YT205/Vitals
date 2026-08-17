@@ -42,6 +42,9 @@ final class TemplateItem {
     var targetReps: Int = 8
     /// Last weight used, in kilograms. Prefilled the next time you run this.
     var lastWeightKg: Double = 0
+    /// Rest between sets of this exercise, in seconds. Copied onto each set
+    /// when a session starts, so the rest clock is per-exercise.
+    var restSeconds: Int = 90
     var order: Int = 0
 
     var template: WorkoutTemplate?
@@ -51,12 +54,14 @@ final class TemplateItem {
         muscleGroup: MuscleGroup = .other,
         targetSets: Int = 3,
         targetReps: Int = 8,
+        restSeconds: Int = 90,
         order: Int = 0
     ) {
         self.exerciseName = exerciseName
         self.muscleGroup = muscleGroup
         self.targetSets = targetSets
         self.targetReps = targetReps
+        self.restSeconds = restSeconds
         self.order = order
     }
 }

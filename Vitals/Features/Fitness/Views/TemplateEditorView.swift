@@ -12,9 +12,17 @@ struct TemplateEditorView: View {
     let isNew: Bool
 
     @State private var showingPicker = false
+    @State private var createdRecoveryRoutine = false
 
     private var canSave: Bool {
         !template.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    private var templateGroups: [MuscleGroup] {
+        var seen = Set<MuscleGroup>()
+        return template.orderedItems.compactMap { item in
+            seen.insert(item.muscleGroup).inserted ? item.muscleGroup : nil
+        }
     }
 
     var body: some View {
@@ -50,9 +58,22 @@ struct TemplateEditorView: View {
                     }
                 }
 
-                Section("Notes") {
-                    TextField("Optional", text: $template.notes, axis: .vertical)
-                        .lineLimit(3...6)
+                Section {
+                    Button {
+                        createRecoveryRoutine()
+                    } label: {
+                        Label(
+                            createdRecoveryRoutine
+                                ? "Recovery Routine Created"
+                                : "Create Recovery Routine",
+                            systemImage: createdRecoveryRoutine
+                                ? "checkmark.circle.fill"
+                                : "figure.cooldown"
+                        )
+                    }
+                    .disabled(template.items.isEmpty || createdRecoveryRoutine)
+                } footer: {
+                    Text("Builds a stretch and massage gun sequence for this workout's muscle groups and saves it to the Recovery tab.")
                 }
             }
             .environment(\.editMode, .constant(.active))
@@ -105,6 +126,17 @@ struct TemplateEditorView: View {
                 .font(.caption)
             }
 
+            Stepper(
+                "Rest: \(item.restSeconds)s",
+                value: Binding(
+                    get: { item.restSeconds },
+                    set: { item.restSeconds = $0 }
+                ),
+                in: 15...300,
+                step: 15
+            )
+            .font(.caption)
+
             if item.lastWeightKg > 0 {
                 Text("Last: \(settings.formattedWeight(fromKilograms: item.lastWeightKg))")
                     .font(.caption2)
@@ -115,6 +147,17 @@ struct TemplateEditorView: View {
     }
 
     // MARK: - Actions
+
+    private func createRecoveryRoutine() {
+        let trimmed = template.name.trimmingCharacters(in: .whitespacesAndNewlines)
+        let baseName = trimmed.isEmpty ? "Workout" : trimmed
+        let routine = RecoveryLibrary.generatedRoutine(
+            named: "\(baseName) Recovery",
+            for: templateGroups
+        )
+        context.insert(routine)
+        createdRecoveryRoutine = true
+    }
 
     private func addExercises(_ exercises: [Exercise]) {
         var nextOrder = (template.items.map(\.order).max() ?? -1) + 1

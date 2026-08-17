@@ -1,15 +1,61 @@
 import SwiftData
 import SwiftUI
 
-/// Recovery tab: saved stretching, massage gun and mobility routines.
+/// Recovery tab: saved stretching, massage gun and mobility routines, with
+/// suggestions driven by what you actually trained in the last few days.
 struct RecoveryHomeView: View {
     @Environment(\.modelContext) private var context
 
     @Query(sort: \RecoveryRoutine.name)
     private var routines: [RecoveryRoutine]
 
+    /// Working sets from roughly the last week; filtered to 3 days in code
+    /// because #Predicate can't reference Date.now dynamically per render.
+    @Query(
+        filter: #Predicate<SetEntry> { $0.isDone && !$0.isWarmup },
+        sort: \SetEntry.completedAt,
+        order: .reverse
+    )
+    private var recentSets: [SetEntry]
+
     @State private var editingRoutine: RecoveryRoutine?
     @State private var draftRoutine: RecoveryRoutine?
+
+    /// Muscle groups trained in the last 3 days, mapped to the most recent day
+    /// each was hit.
+    private var recentlyTrained: [MuscleGroup: Date] {
+        let cutoff = Calendar.current.date(byAdding: .day, value: -3, to: .now) ?? .now
+        var result: [MuscleGroup: Date] = [:]
+        for entry in recentSets {
+            guard let done = entry.completedAt else { continue }
+            if done < cutoff { break }  // sorted newest-first, safe to stop
+            if let existing = result[entry.muscleGroup], existing >= done { continue }
+            result[entry.muscleGroup] = done
+        }
+        return result
+    }
+
+    /// Routines whose targets overlap recent training, best match first.
+    private var suggested: [(routine: RecoveryRoutine, matched: [MuscleGroup])] {
+        let trained = recentlyTrained
+        guard !trained.isEmpty else { return [] }
+
+        return routines
+            .compactMap { routine -> (RecoveryRoutine, [MuscleGroup])? in
+                let matched = routine.targetGroups.filter { trained.keys.contains($0) }
+                guard !matched.isEmpty else { return nil }
+                return (routine, matched)
+            }
+            .sorted { lhs, rhs in
+                if lhs.1.count != rhs.1.count { return lhs.1.count > rhs.1.count }
+                // Tie-break: the one you've done least recently.
+                let lhsDone = lhs.0.lastPerformedAt ?? .distantPast
+                let rhsDone = rhs.0.lastPerformedAt ?? .distantPast
+                return lhsDone < rhsDone
+            }
+            .prefix(3)
+            .map { (routine: $0.0, matched: $0.1) }
+    }
 
     private var grouped: [(kind: RecoveryKind, items: [RecoveryRoutine])] {
         Dictionary(grouping: routines, by: \.kind)
@@ -35,6 +81,18 @@ struct RecoveryHomeView: View {
                     )
                     .listRowBackground(Color.clear)
                 } else {
+                    if !suggested.isEmpty {
+                        Section {
+                            ForEach(suggested, id: \.routine.id) { suggestion in
+                                suggestedRow(suggestion.routine, matched: suggestion.matched)
+                            }
+                        } header: {
+                            Label("Suggested for You", systemImage: "sparkles")
+                        } footer: {
+                            Text("Based on the muscle groups you trained in the last 3 days.")
+                        }
+                    }
+
                     ForEach(grouped, id: \.kind) { section in
                         Section {
                             ForEach(section.items) { routine in
@@ -63,6 +121,26 @@ struct RecoveryHomeView: View {
             }
             .sheet(item: $draftRoutine) { routine in
                 RoutineEditorView(routine: routine, isNew: true)
+            }
+        }
+    }
+
+    private func suggestedRow(
+        _ routine: RecoveryRoutine,
+        matched: [MuscleGroup]
+    ) -> some View {
+        NavigationLink {
+            RoutinePlayerView(routine: routine)
+        } label: {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(routine.name)
+                    .font(.body.weight(.medium))
+                Text("You trained \(matched.map(\.label).formatted(.list(type: .and)))")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Label(routine.formattedDuration, systemImage: "clock")
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
             }
         }
     }
