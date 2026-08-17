@@ -38,6 +38,8 @@ final class AppSettings {
         static let reminderStartHour = "settings.reminderStartHour"
         static let reminderEndHour = "settings.reminderEndHour"
         static let reminderIntervalMinutes = "settings.reminderIntervalMinutes"
+        static let hiddenVitals = "settings.hiddenVitals"
+        static let showSleepCard = "settings.showSleepCard"
     }
 
     private let defaults: UserDefaults
@@ -71,6 +73,30 @@ final class AppSettings {
         didSet { defaults.set(reminderIntervalMinutes, forKey: Key.reminderIntervalMinutes) }
     }
 
+    /// Vitals hidden from the Health dashboard. Stored as the *hidden* set (not
+    /// the visible one) so any metric added in a future update shows up
+    /// automatically instead of being invisible to existing installs.
+    var hiddenVitals: Set<String> {
+        didSet { defaults.set(Array(hiddenVitals), forKey: Key.hiddenVitals) }
+    }
+
+    /// Whether the sleep card appears on the Health dashboard.
+    var showSleepCard: Bool {
+        didSet { defaults.set(showSleepCard, forKey: Key.showSleepCard) }
+    }
+
+    func isVisible(_ kind: VitalKind) -> Bool {
+        !hiddenVitals.contains(kind.rawValue)
+    }
+
+    func setVisible(_ kind: VitalKind, _ visible: Bool) {
+        if visible {
+            hiddenVitals.remove(kind.rawValue)
+        } else {
+            hiddenVitals.insert(kind.rawValue)
+        }
+    }
+
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
 
@@ -95,6 +121,13 @@ final class AppSettings {
 
         let storedInterval = defaults.integer(forKey: Key.reminderIntervalMinutes)
         reminderIntervalMinutes = storedInterval > 0 ? storedInterval : 90
+
+        hiddenVitals = Set(defaults.stringArray(forKey: Key.hiddenVitals) ?? [])
+
+        // Default true; `bool(forKey:)` alone would default to false.
+        showSleepCard = defaults.object(forKey: Key.showSleepCard) == nil
+            ? true
+            : defaults.bool(forKey: Key.showSleepCard)
     }
 
     // MARK: - Weight helpers

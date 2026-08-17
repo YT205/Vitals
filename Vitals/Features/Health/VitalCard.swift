@@ -4,8 +4,23 @@ import SwiftUI
 /// rather than hiding, so you can tell the difference between "no data" and
 /// "metric not supported".
 struct VitalCard: View {
+    @Environment(AppSettings.self) private var settings
+
     let kind: VitalKind
     let reading: VitalReading?
+
+    /// Weight-based vitals convert kg to the user's unit; everything else uses
+    /// the reading's own formatting.
+    private var valueText: String {
+        guard let reading else { return "--" }
+        guard kind.respectsWeightUnit else { return reading.formattedValue }
+        let converted = settings.displayWeight(fromKilograms: reading.value)
+        return converted.formatted(.number.precision(.fractionLength(kind.fractionDigits)))
+    }
+
+    private var unitText: String {
+        kind.respectsWeightUnit ? settings.weightUnit.label : kind.displayUnit
+    }
 
     var body: some View {
         Card(padding: 14) {
@@ -23,11 +38,11 @@ struct VitalCard: View {
 
                 if let reading {
                     HStack(alignment: .firstTextBaseline, spacing: 3) {
-                        Text(reading.formattedValue)
+                        Text(valueText)
                             .font(.title2.weight(.semibold))
                             .contentTransition(.numericText())
-                        if !kind.displayUnit.isEmpty {
-                            Text(kind.displayUnit)
+                        if !unitText.isEmpty {
+                            Text(unitText)
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                         }
@@ -58,14 +73,15 @@ struct VitalCard: View {
             )
             VitalCard(kind: .heartRateVariability, reading: nil)
             VitalCard(
-                kind: .bloodOxygen,
-                reading: VitalReading(kind: .bloodOxygen, value: 98.2, date: .now)
+                kind: .bodyWeight,
+                reading: VitalReading(kind: .bodyWeight, value: 82.5, date: .now)
             )
             VitalCard(
-                kind: .steps,
-                reading: VitalReading(kind: .steps, value: 8_432, date: nil)
+                kind: .bodyFat,
+                reading: VitalReading(kind: .bodyFat, value: 18.2, date: .now)
             )
         }
         .padding()
     }
+    .environment(AppSettings())
 }

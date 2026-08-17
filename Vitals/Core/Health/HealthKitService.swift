@@ -54,6 +54,10 @@ final class HealthKitService {
         if let heartRate = HKQuantityType.quantityType(forIdentifier: .heartRate) {
             types.insert(heartRate)
         }
+        // Height, for deriving BMI when weight is logged.
+        if let height = HKQuantityType.quantityType(forIdentifier: .height) {
+            types.insert(height)
+        }
         types.insert(HKObjectType.workoutType())
         return types
     }
@@ -69,6 +73,16 @@ final class HealthKitService {
         // Workout effort (1-10), same scale the Workout app asks about.
         if let effort = HKQuantityType.quantityType(forIdentifier: .workoutEffortScore) {
             types.insert(effort)
+        }
+        // Body composition: logged weight and calculated body fat, plus the
+        // two values derived from them.
+        let bodyIdentifiers: [HKQuantityTypeIdentifier] = [
+            .bodyMass, .bodyFatPercentage, .leanBodyMass, .bodyMassIndex,
+        ]
+        for identifier in bodyIdentifiers {
+            if let type = HKQuantityType.quantityType(forIdentifier: identifier) {
+                types.insert(type)
+            }
         }
         types.insert(HKObjectType.workoutType())
         return types
@@ -372,6 +386,112 @@ final class HealthKitService {
                 continuation.resume(returning: (bpm, date))
             }
             store.execute(query)
+        }
+    }
+
+    // MARK: - Body composition
+
+    /// Newest sample of a quantity type within the last `days` days, in `unit`.
+    private func latestQuantity(
+        _ identifier: HKQuantityTypeIdentifier,
+        unit: HKUnit,
+        withinDays days: Int
+    ) async throws -> Double? {
+        guard let type = HKQuantityType.quantityType(forIdentifier: identifier) else {
+            return nil
+        }
+        let start = Calendar.current.date(byAdding: .day, value: -days, to: .now)
+        let predicate = HKQuery.predicateForSamples(withStart: start, end: .now)
+        let sort = [NSSortDescriptor(key: HKSampleSortIdentifierEndDate, ascending: false)]
+
+        return try await withCheckedThrowingContinuation { continuation in
+            let query = HKSampleQuery(
+                sampleType: type,
+                predicate: predicate,
+                limit: 1,
+                sortDescriptors: sort
+            ) { _, samples, error in
+                if let error {
+                    continuation.resume(throwing: error)
+                    return
+                }
+                guard let sample = samples?.first as? HKQuantitySample else {
+                    continuation.resume(returning: nil)
+                    return
+                }
+                continuation.resume(returning: sample.quantity.doubleValue(for: unit))
+            }
+            store.execute(query)
+        }
+    }
+
+    /// Latest height in metres. Height rarely changes, so look back 10 years.
+    func latestHeightMeters() async throws -> Double? {
+        try await latestQuantity(.height, unit: .meter(), withinDays: 3_650)
+    }
+
+    /// Latest body weight in kilograms from the last year.
+    func latestBodyMassKg() async throws -> Double? {
+        try await latestQuantity(.bodyMass, unit: .gramUnit(with: .kilo), withinDays: 365)
+    }
+
+    /// Saves a weight sample, deriving BMI alongside it when height is on file.
+    func saveBodyWeight(kilograms: Double, at date: Date = .now) async throws {
+        guard let type = HKQuantityType.quantityType(forIdentifier: .bodyMass) else {
+            throw HealthKitError.missingType("bodyMass")
+        }
+        let sample = HKQuantitySample(
+            type: type,
+            quantity: HKQuantity(unit: .gramUnit(with: .kilo), doubleValue: kilograms),
+            start: date,
+            end: date
+        )
+        try await store.save(sample)
+
+        // Derive BMI = kg / m^2 when we know the height.
+        if let height = try? await latestHeightMeters(),
+           height > 0,
+           let bmiType = HKQuantityType.quantityType(forIdentifier: .bodyMassIndex) {
+            let bmi = kilograms / (height * height)
+            let bmiSample = HKQuantitySample(
+                type: bmiType,
+                quantity: HKQuantity(unit: .count(), doubleValue: bmi),
+                start: date,
+                end: date
+            )
+            try? await store.save(bmiSample)
+        }
+    }
+
+    /// Saves a body fat percentage (0...100 input), deriving lean body mass
+    /// alongside it when a recent weight is on file.
+    func saveBodyFat(percent: Double, at date: Date = .now) async throws {
+        guard let type = HKQuantityType.quantityType(forIdentifier: .bodyFatPercentage) else {
+            throw HealthKitError.missingType("bodyFatPercentage")
+        }
+        let fraction = min(max(percent / 100, 0), 1)
+        let sample = HKQuantitySample(
+            type: type,
+            quantity: HKQuantity(unit: .percent(), doubleValue: fraction),
+            start: date,
+            end: date
+        )
+        try await store.save(sample)
+
+        // Derive lean mass = weight x (1 - fat fraction) when weight is known.
+        if let weight = try? await latestBodyMassKg(),
+           weight > 0,
+           let leanType = HKQuantityType.quantityType(forIdentifier: .leanBodyMass) {
+            let leanSample = HKQuantitySample(
+                type: leanType,
+                quantity: HKQuantity(
+                    unit: .gramUnit(with: .kilo),
+                    doubleValue: weight * (1 - fraction)
+                ),
+                start: date,
+                end: date
+            )
+            try? await store.save(leanSample)
         }
     }
 

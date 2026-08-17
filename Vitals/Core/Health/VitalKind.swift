@@ -13,6 +13,7 @@ enum VitalAggregation: Sendable {
 enum VitalSection: String, CaseIterable, Identifiable, Sendable {
     case recovery
     case activity
+    case bodyComposition
 
     var id: String { rawValue }
 
@@ -20,6 +21,7 @@ enum VitalSection: String, CaseIterable, Identifiable, Sendable {
         switch self {
         case .recovery: "Recovery & Vitals"
         case .activity: "Today's Activity"
+        case .bodyComposition: "Body"
         }
     }
 }
@@ -40,6 +42,10 @@ enum VitalKind: String, CaseIterable, Identifiable, Sendable {
     case steps
     case activeEnergy
     case exerciseMinutes
+    case bodyWeight
+    case bodyFat
+    case leanBodyMass
+    case bmi
 
     var id: String { rawValue }
 
@@ -55,6 +61,10 @@ enum VitalKind: String, CaseIterable, Identifiable, Sendable {
         case .steps: "Steps"
         case .activeEnergy: "Active Energy"
         case .exerciseMinutes: "Exercise"
+        case .bodyWeight: "Weight"
+        case .bodyFat: "Body Fat"
+        case .leanBodyMass: "Lean Mass"
+        case .bmi: "BMI"
         }
     }
 
@@ -70,6 +80,10 @@ enum VitalKind: String, CaseIterable, Identifiable, Sendable {
         case .steps: "shoeprints.fill"
         case .activeEnergy: "flame.fill"
         case .exerciseMinutes: "stopwatch.fill"
+        case .bodyWeight: "scalemass.fill"
+        case .bodyFat: "percent"
+        case .leanBodyMass: "figure.arms.open"
+        case .bmi: "chart.bar.fill"
         }
     }
 
@@ -84,6 +98,10 @@ enum VitalKind: String, CaseIterable, Identifiable, Sendable {
         case .steps: .indigo
         case .activeEnergy: .pink
         case .exerciseMinutes: .green
+        case .bodyWeight: .brown
+        case .bodyFat: .yellow
+        case .leanBodyMass: .cyan
+        case .bmi: .gray
         }
     }
 
@@ -94,6 +112,8 @@ enum VitalKind: String, CaseIterable, Identifiable, Sendable {
             .recovery
         case .steps, .activeEnergy, .exerciseMinutes:
             .activity
+        case .bodyWeight, .bodyFat, .leanBodyMass, .bmi:
+            .bodyComposition
         }
     }
 
@@ -109,6 +129,10 @@ enum VitalKind: String, CaseIterable, Identifiable, Sendable {
         case .steps: .stepCount
         case .activeEnergy: .activeEnergyBurned
         case .exerciseMinutes: .appleExerciseTime
+        case .bodyWeight: .bodyMass
+        case .bodyFat: .bodyFatPercentage
+        case .leanBodyMass: .leanBodyMass
+        case .bmi: .bodyMassIndex
         }
     }
 
@@ -135,6 +159,12 @@ enum VitalKind: String, CaseIterable, Identifiable, Sendable {
             HKUnit.kilocalorie()
         case .exerciseMinutes:
             HKUnit.minute()
+        case .bodyWeight, .leanBodyMass:
+            HKUnit.gramUnit(with: .kilo)
+        case .bodyFat:
+            HKUnit.percent()
+        case .bmi:
+            HKUnit.count()
         }
     }
 
@@ -146,9 +176,18 @@ enum VitalKind: String, CaseIterable, Identifiable, Sendable {
     }
 
     /// Multiplier applied to the raw HealthKit value before display.
-    /// HealthKit reports oxygen saturation as a 0...1 fraction.
+    /// HealthKit reports oxygen saturation and body fat as 0...1 fractions.
     var displayScale: Double {
-        self == .bloodOxygen ? 100 : 1
+        switch self {
+        case .bloodOxygen, .bodyFat: 100
+        default: 1
+        }
+    }
+
+    /// `true` for kilogram-based vitals that should render in the user's
+    /// preferred weight unit (lb/kg). The raw reading stays in kilograms.
+    var respectsWeightUnit: Bool {
+        self == .bodyWeight || self == .leanBodyMass
     }
 
     var displayUnit: String {
@@ -156,12 +195,14 @@ enum VitalKind: String, CaseIterable, Identifiable, Sendable {
         case .restingHeartRate, .walkingHeartRate: "BPM"
         case .heartRateVariability: "ms"
         case .respiratoryRate: "br/min"
-        case .bloodOxygen: "%"
+        case .bloodOxygen, .bodyFat: "%"
         case .wristTemperature: ""      // formatted as a Measurement instead
         case .vo2Max: "ml/kg·min"
         case .steps: "steps"
         case .activeEnergy: "kcal"
         case .exerciseMinutes: "min"
+        case .bodyWeight, .leanBodyMass: "kg"  // overridden by settings in the UI
+        case .bmi: ""
         }
     }
 
@@ -170,7 +211,8 @@ enum VitalKind: String, CaseIterable, Identifiable, Sendable {
         case .steps, .activeEnergy, .exerciseMinutes, .restingHeartRate,
              .walkingHeartRate, .heartRateVariability:
             0
-        case .bloodOxygen, .respiratoryRate, .vo2Max, .wristTemperature:
+        case .bloodOxygen, .respiratoryRate, .vo2Max, .wristTemperature,
+             .bodyWeight, .bodyFat, .leanBodyMass, .bmi:
             1
         }
     }

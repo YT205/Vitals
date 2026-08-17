@@ -21,6 +21,8 @@ struct FitnessHomeView: View {
     @State private var launch: WorkoutLaunch?
     @State private var editingTemplate: WorkoutTemplate?
     @State private var draftTemplate: WorkoutTemplate?
+    /// Set when a delete is requested; the confirmation dialog acts on it.
+    @State private var templatePendingDelete: WorkoutTemplate?
 
     private var activeSession: WorkoutSession? { activeSessions.first }
 
@@ -41,10 +43,11 @@ struct FitnessHomeView: View {
                             .foregroundStyle(.secondary)
                             .font(.callout)
                     } else {
+                        // No .onDelete here on purpose: every deletion path
+                        // funnels through the confirmation dialog instead.
                         ForEach(templates) { template in
                             templateRow(template)
                         }
-                        .onDelete(perform: deleteTemplates)
                         .onMove(perform: moveTemplates)
                     }
                 } header: {
@@ -97,6 +100,22 @@ struct FitnessHomeView: View {
             .sheet(item: $draftTemplate) { template in
                 TemplateEditorView(template: template, isNew: true)
             }
+            .confirmationDialog(
+                "Delete this workout?",
+                isPresented: Binding(
+                    get: { templatePendingDelete != nil },
+                    set: { if !$0 { templatePendingDelete = nil } }
+                ),
+                titleVisibility: .visible,
+                presenting: templatePendingDelete
+            ) { template in
+                Button("Delete \"\(template.name)\"", role: .destructive) {
+                    delete(template)
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: { template in
+                Text("\"\(template.name)\" and its exercise plan are removed. Finished workouts in History are kept.")
+            }
         }
     }
 
@@ -126,47 +145,38 @@ struct FitnessHomeView: View {
     }
 
     private func templateRow(_ template: WorkoutTemplate) -> some View {
-        HStack(spacing: 12) {
-            // Tap the row to start the workout...
-            Button {
-                start(from: template)
-            } label: {
-                HStack {
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text(template.name)
-                            .font(.body.weight(.medium))
-                        Text(template.summary)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                        if let last = template.lastPerformedAt {
-                            Text("Last done \(last.formatted(.relative(presentation: .named)))")
-                                .font(.caption2)
-                                .foregroundStyle(.tertiary)
-                        }
+        Button {
+            start(from: template)
+        } label: {
+            HStack {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(template.name)
+                        .font(.body.weight(.medium))
+                    Text(template.summary)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    if let last = template.lastPerformedAt {
+                        Text("Last done \(last.formatted(.relative(presentation: .named)))")
+                            .font(.caption2)
+                            .foregroundStyle(.tertiary)
                     }
-                    Spacer()
-                    Image(systemName: "play.circle.fill")
-                        .font(.title2)
-                        .foregroundStyle(.tint)
                 }
-                .contentShape(.rect)
-            }
-            .buttonStyle(.borderless)
-            .disabled(activeSession != nil)
-
-            // ...tap the pencil to change the plan. Always enabled, even
-            // mid-workout (edits apply from the next session).
-            Button {
-                editingTemplate = template
-            } label: {
-                Image(systemName: "pencil.circle")
+                Spacer()
+                Image(systemName: "play.circle.fill")
                     .font(.title2)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(.tint)
             }
-            .buttonStyle(.borderless)
-            .accessibilityLabel("Edit \(template.name)")
         }
-        .swipeActions(edge: .leading) {
+        .disabled(activeSession != nil)
+        // Swipe left: Delete at the edge, Edit next to it. Delete asks first.
+        .swipeActions(edge: .trailing) {
+            Button {
+                templatePendingDelete = template
+            } label: {
+                Label("Delete", systemImage: "trash")
+            }
+            .tint(.red)
+
             Button {
                 editingTemplate = template
             } label: {
@@ -174,7 +184,7 @@ struct FitnessHomeView: View {
             }
             .tint(.blue)
         }
-        // Long-press for the same options -- swipe wasn't discoverable.
+        // Long-press for the same options.
         .contextMenu {
             Button {
                 editingTemplate = template
@@ -182,8 +192,7 @@ struct FitnessHomeView: View {
                 Label("Edit Workout", systemImage: "pencil")
             }
             Button(role: .destructive) {
-                context.delete(template)
-                try? context.save()
+                templatePendingDelete = template
             } label: {
                 Label("Delete Workout", systemImage: "trash")
             }
@@ -223,10 +232,8 @@ struct FitnessHomeView: View {
         launch = WorkoutLaunch(session: session, template: template)
     }
 
-    private func deleteTemplates(at offsets: IndexSet) {
-        for index in offsets {
-            context.delete(templates[index])
-        }
+    private func delete(_ template: WorkoutTemplate) {
+        context.delete(template)
         renumberTemplates()
         try? context.save()
     }

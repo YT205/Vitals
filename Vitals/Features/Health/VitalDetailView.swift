@@ -5,6 +5,8 @@ import SwiftUI
 /// Data comes straight from HealthKit, which already keeps the full history --
 /// nothing needs to be re-saved app-side.
 struct VitalDetailView: View {
+    @Environment(AppSettings.self) private var settings
+
     let kind: VitalKind
     /// Today's reading, passed from the dashboard so the header renders
     /// instantly while history loads.
@@ -29,7 +31,26 @@ struct VitalDetailView: View {
     @State private var points: [(date: Date, value: Double)] = []
     @State private var isLoading = true
 
-    private var values: [Double] { points.map(\.value) }
+    /// Chart and stat values in the user's display unit.
+    private var displayPoints: [(date: Date, value: Double)] {
+        guard kind.respectsWeightUnit else { return points }
+        return points.map {
+            (date: $0.date, value: settings.displayWeight(fromKilograms: $0.value))
+        }
+    }
+
+    private var values: [Double] { displayPoints.map(\.value) }
+
+    private var headerValueText: String {
+        guard let latest else { return "--" }
+        guard kind.respectsWeightUnit else { return latest.formattedValue }
+        let converted = settings.displayWeight(fromKilograms: latest.value)
+        return converted.formatted(.number.precision(.fractionLength(kind.fractionDigits)))
+    }
+
+    private var unitText: String {
+        kind.respectsWeightUnit ? settings.weightUnit.label : kind.displayUnit
+    }
 
     var body: some View {
         ScrollView {
@@ -72,10 +93,10 @@ struct VitalDetailView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     if let latest {
                         HStack(alignment: .firstTextBaseline, spacing: 4) {
-                            Text(latest.formattedValue)
+                            Text(headerValueText)
                                 .font(.largeTitle.weight(.semibold))
-                            if !kind.displayUnit.isEmpty {
-                                Text(kind.displayUnit)
+                            if !unitText.isEmpty {
+                                Text(unitText)
                                     .font(.subheadline)
                                     .foregroundStyle(.secondary)
                             }
@@ -107,7 +128,7 @@ struct VitalDetailView: View {
                 if isLoading {
                     ProgressView()
                         .frame(maxWidth: .infinity, minHeight: 200)
-                } else if points.count < 2 {
+                } else if displayPoints.count < 2 {
                     Text("Not enough history in this range yet.")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
@@ -122,7 +143,7 @@ struct VitalDetailView: View {
     @ViewBuilder
     private var chart: some View {
         if kind.aggregation == .dailySum {
-            Chart(points, id: \.date) { point in
+            Chart(displayPoints, id: \.date) { point in
                 BarMark(
                     x: .value("Day", point.date, unit: .day),
                     y: .value(kind.title, point.value)
@@ -131,7 +152,7 @@ struct VitalDetailView: View {
             }
             .frame(height: 220)
         } else {
-            Chart(points, id: \.date) { point in
+            Chart(displayPoints, id: \.date) { point in
                 LineMark(
                     x: .value("Day", point.date, unit: .day),
                     y: .value(kind.title, point.value)
