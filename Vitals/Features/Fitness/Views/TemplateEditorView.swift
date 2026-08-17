@@ -1,0 +1,170 @@
+import SwiftData
+import SwiftUI
+
+/// Create or edit a workout template ("Push Day A", "Legs", ...).
+struct TemplateEditorView: View {
+    @Environment(\.modelContext) private var context
+    @Environment(\.dismiss) private var dismiss
+    @Environment(AppSettings.self) private var settings
+
+    @Bindable var template: WorkoutTemplate
+    /// When `true`, cancelling deletes the freshly inserted record.
+    let isNew: Bool
+
+    @State private var showingPicker = false
+
+    private var canSave: Bool {
+        !template.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("Name") {
+                    TextField("e.g. Push Day A", text: $template.name)
+                        .textInputAutocapitalization(.words)
+                }
+
+                Section {
+                    if template.items.isEmpty {
+                        Text("No exercises yet.")
+                            .foregroundStyle(.secondary)
+                    } else {
+                        ForEach(template.orderedItems) { item in
+                            itemRow(item)
+                        }
+                        .onDelete(perform: deleteItems)
+                        .onMove(perform: moveItems)
+                    }
+
+                    Button {
+                        showingPicker = true
+                    } label: {
+                        Label("Add Exercises", systemImage: "plus")
+                    }
+                } header: {
+                    Text("Exercises")
+                } footer: {
+                    if !template.items.isEmpty {
+                        Text("Swipe to delete. Drag to reorder. Sets and reps here are just targets -- you can change anything mid-workout.")
+                    }
+                }
+
+                Section("Notes") {
+                    TextField("Optional", text: $template.notes, axis: .vertical)
+                        .lineLimit(3...6)
+                }
+            }
+            .environment(\.editMode, .constant(.active))
+            .navigationTitle(isNew ? "New Workout" : "Edit Workout")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { cancel() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save") { save() }
+                        .disabled(!canSave)
+                }
+            }
+            .sheet(isPresented: $showingPicker) {
+                ExercisePickerView(
+                    excluding: Set(template.items.map(\.exerciseName))
+                ) { exercises in
+                    addExercises(exercises)
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func itemRow(_ item: TemplateItem) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(item.exerciseName)
+                .font(.body.weight(.medium))
+
+            HStack(spacing: 16) {
+                Stepper(
+                    "\(item.targetSets) sets",
+                    value: Binding(
+                        get: { item.targetSets },
+                        set: { item.targetSets = $0 }
+                    ),
+                    in: 1...12
+                )
+                .font(.caption)
+
+                Stepper(
+                    "\(item.targetReps) reps",
+                    value: Binding(
+                        get: { item.targetReps },
+                        set: { item.targetReps = $0 }
+                    ),
+                    in: 1...50
+                )
+                .font(.caption)
+            }
+
+            if item.lastWeightKg > 0 {
+                Text("Last: \(settings.formattedWeight(fromKilograms: item.lastWeightKg))")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding(.vertical, 2)
+    }
+
+    // MARK: - Actions
+
+    private func addExercises(_ exercises: [Exercise]) {
+        var nextOrder = (template.items.map(\.order).max() ?? -1) + 1
+        for exercise in exercises {
+            let item = TemplateItem(
+                exerciseName: exercise.name,
+                muscleGroup: exercise.muscleGroup,
+                order: nextOrder
+            )
+            item.template = template
+            context.insert(item)
+            nextOrder += 1
+        }
+    }
+
+    private func deleteItems(at offsets: IndexSet) {
+        let ordered = template.orderedItems
+        for index in offsets {
+            context.delete(ordered[index])
+        }
+        renumber()
+    }
+
+    private func moveItems(from source: IndexSet, to destination: Int) {
+        var ordered = template.orderedItems
+        ordered.move(fromOffsets: source, toOffset: destination)
+        for (index, item) in ordered.enumerated() {
+            item.order = index
+        }
+    }
+
+    private func renumber() {
+        for (index, item) in template.orderedItems.enumerated() {
+            item.order = index
+        }
+    }
+
+    private func save() {
+        template.name = template.name.trimmingCharacters(in: .whitespacesAndNewlines)
+        renumber()
+        try? context.save()
+        dismiss()
+    }
+
+    private func cancel() {
+        if isNew {
+            context.delete(template)
+        }
+        // Roll back any edits made to an existing template.
+        context.rollback()
+        dismiss()
+    }
+}

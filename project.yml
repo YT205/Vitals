@@ -1,0 +1,65 @@
+name: Vitals
+
+options:
+  bundleIdPrefix: com.yashst
+  deploymentTarget:
+    iOS: "18.0"
+  createIntermediateGroups: true
+  groupSortPosition: top
+  generateEmptyDirectories: true
+
+configs:
+  Debug: debug
+  Release: release
+
+settings:
+  base:
+    # Swift 5 language mode keeps strict-concurrency out of your way while the
+    # app is young. Flip to 6.0 when you are ready -- see README.
+    SWIFT_VERSION: "5.0"
+    SWIFT_STRICT_CONCURRENCY: minimal
+    MARKETING_VERSION: "0.1.0"
+    CURRENT_PROJECT_VERSION: "1"
+    CODE_SIGN_STYLE: Automatic
+    # Paste your 10-character Team ID here once you join the Developer Program.
+    # Leaving it blank lets Xcode pick your Personal Team automatically.
+    DEVELOPMENT_TEAM: ""
+    SWIFT_EMIT_LOC_STRINGS: YES
+
+targets:
+  Vitals:
+    type: application
+    platform: iOS
+    sources:
+      - path: Vitals
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.yashst.vitals
+        PRODUCT_NAME: Vitals
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+        ENABLE_PREVIEWS: YES
+        TARGETED_DEVICE_FAMILY: "1"
+        SUPPORTS_MACCATALYST: NO
+    entitlements:
+      path: Vitals/App/Vitals.entitlements
+      properties:
+        com.apple.developer.healthkit: true
+    info:
+      path: Vitals/App/Info.plist
+      properties:
+        CFBundleDisplayName: Vitals
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        UILaunchScreen: {}
+        UIApplicationSupportsIndirectInputEvents: true
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+        UIUserInterfaceStyle: Automatic
+        ITSAppUsesNonExemptEncryption: false
+        NSHealthShareUsageDescription: >-
+          Vitals reads your Apple Health data so it can show your vitals,
+          sleep and activity on the Health tab.
+        NSHealthUpdateUsageDescription: >-
+          Vitals saves the workouts and water you log back to Apple Health so
+          the data stays yours and survives reinstalling the app.
