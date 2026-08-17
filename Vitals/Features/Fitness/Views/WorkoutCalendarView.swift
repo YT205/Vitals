@@ -1,5 +1,6 @@
 import SwiftData
 import SwiftUI
+import UIKit
 
 /// Month grid showing which days you trained. Tap a day to see what you did.
 struct WorkoutCalendarView: View {
@@ -139,9 +140,7 @@ struct WorkoutCalendarView: View {
             VStack(spacing: 3) {
                 Text("\(calendar.component(.day, from: day))")
                     .font(.footnote.weight(isToday ? .bold : .regular))
-                    .foregroundStyle(
-                        isFuture ? .tertiary : (isToday ? Color.accentColor : .primary)
-                    )
+                    .foregroundStyle(dayNumberColor(isFuture: isFuture, isToday: isToday))
                 Circle()
                     .fill(trained ? Color.accentColor : .clear)
                     .frame(width: 5, height: 5)
@@ -158,6 +157,15 @@ struct WorkoutCalendarView: View {
     }
 
     // MARK: - Helpers
+
+    /// Concrete `Color` for the day number. `.tertiary` the hierarchical style
+    /// can't sit in the same ternary as a `Color`, so future days use the
+    /// equivalent UIKit label color instead.
+    private func dayNumberColor(isFuture: Bool, isToday: Bool) -> Color {
+        if isFuture { return Color(.tertiaryLabel) }
+        if isToday { return .accentColor }
+        return .primary
+    }
 
     private var isCurrentMonth: Bool {
         calendar.isDate(monthAnchor, equalTo: .now, toGranularity: .month)
