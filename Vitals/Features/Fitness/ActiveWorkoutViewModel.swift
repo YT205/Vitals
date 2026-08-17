@@ -68,81 +68,22 @@ final class ActiveWorkoutViewModel {
 
     // MARK: - Set management
 
-    /// Adds one more set to an exercise, copying the weight and reps of the last
-    /// set so you only change what actually changed.
-    func addSet(
-        toExercise name: String,
-        in session: WorkoutSession,
-        context: ModelContext
-    ) {
-        let existing = session.orderedSets.filter { $0.exerciseName == name }
-        guard let template = existing.last else { return }
-
-        let entry = SetEntry(
-            exerciseName: name,
-            muscleGroup: template.muscleGroup,
-            exerciseOrder: template.exerciseOrder,
-            setNumber: (existing.map(\.setNumber).max() ?? 0) + 1,
-            weightKg: template.weightKg,
-            reps: template.reps
-        )
-        entry.session = session
-        context.insert(entry)
-    }
-
-    func addExercises(
-        _ exercises: [Exercise],
-        to session: WorkoutSession,
-        context: ModelContext,
-        setsEach: Int = 3,
-        reps: Int = 8
-    ) {
-        var nextOrder = (session.sets.map(\.exerciseOrder).max() ?? -1) + 1
-
-        for exercise in exercises {
-            // Skip anything already in the session.
-            guard !session.sets.contains(where: { $0.exerciseName == exercise.name }) else {
-                continue
-            }
-            for setNumber in 1...max(1, setsEach) {
-                let entry = SetEntry(
-                    exerciseName: exercise.name,
-                    muscleGroup: exercise.muscleGroup,
-                    exerciseOrder: nextOrder,
-                    setNumber: setNumber,
-                    weightKg: lastWeight(for: exercise.name, context: context),
-                    reps: reps
-                )
-                entry.session = session
-                context.insert(entry)
-            }
-            nextOrder += 1
-        }
-    }
-
     func delete(_ entry: SetEntry, context: ModelContext) {
         context.delete(entry)
-    }
-
-    /// Heaviest completed set for this exercise across all past sessions, used to
-    /// prefill new rows.
-    func lastWeight(for exerciseName: String, context: ModelContext) -> Double {
-        var descriptor = FetchDescriptor<SetEntry>(
-            predicate: #Predicate { $0.exerciseName == exerciseName && $0.isDone },
-            sortBy: [SortDescriptor(\.completedAt, order: .reverse)]
-        )
-        descriptor.fetchLimit = 1
-        let match = try? context.fetch(descriptor).first
-        return match?.weightKg ?? 0
     }
 
     // MARK: - Finishing
 
     /// Closes the session, mirrors it to Apple Health, and writes the weights
     /// used back onto the template so next time is prefilled.
+    ///
+    /// Every set with real data (weight or reps entered) is kept and counted,
+    /// whether or not its checkmark was tapped -- the checkmark just drives the
+    /// rest timer. Only rows that are still completely empty are dropped.
     func finish(
         session: WorkoutSession,
         template: WorkoutTemplate?,
+        effortScore: Int?,
         context: ModelContext,
         health: HealthKitService = .shared
     ) async {
@@ -152,10 +93,14 @@ final class ActiveWorkoutViewModel {
 
         let end = Date.now
         session.endedAt = end
+        session.effortScore = effortScore
 
-        // Drop any sets that were never completed so history stays honest.
         for entry in session.sets where !entry.isDone {
-            context.delete(entry)
+            if entry.weightKg > 0 || entry.reps > 0 {
+                entry.markDone()
+            } else {
+                context.delete(entry)
+            }
         }
 
         if let template {
@@ -177,7 +122,8 @@ final class ActiveWorkoutViewModel {
             try await health.saveStrengthWorkout(
                 start: session.startedAt,
                 end: end,
-                activeEnergyKcal: nil
+                activeEnergyKcal: nil,
+                effortScore: effortScore
             )
             session.savedToHealthKit = true
             try? context.save()
@@ -189,10 +135,19 @@ final class ActiveWorkoutViewModel {
         isSaving = false
     }
 
-    /// Throws the session away entirely.
-    func discard(session: WorkoutSession, context: ModelContext) {
+    /// Deletes the session *after* the workout screen has animated away.
+    ///
+    /// Deleting immediately was the freeze you hit: the screen's `@Bindable`
+    /// session was destroyed while SwiftUI was still rendering it, mid-dismissal.
+    /// The delay lets the pop animation finish so nothing is observing the
+    /// object when it dies.
+    func discardAfterDismiss(session: WorkoutSession, context: ModelContext) {
         stopRest()
-        context.delete(session)
-        try? context.save()
+        let target = session
+        Task {
+            try? await Task.sleep(for: .seconds(0.7))
+            context.delete(target)
+            try? context.save()
+        }
     }
 }

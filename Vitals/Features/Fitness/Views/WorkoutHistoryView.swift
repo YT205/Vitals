@@ -119,6 +119,16 @@ struct WorkoutDetailView: View {
                     }
                     .font(.caption)
                 }
+
+                if let effort = session.effortScore {
+                    HStack {
+                        Text("Effort")
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                        Text("\(effort) of 10")
+                    }
+                    .font(.caption)
+                }
             }
 
             ForEach(groups, id: \.name) { group in

@@ -7,8 +7,10 @@ enum MuscleGroup: String, Codable, CaseIterable, Identifiable, Sendable {
     case shoulders
     case biceps
     case triceps
+    case forearms
     case legs
     case glutes
+    case calves
     case core
     case fullBody
     case other
@@ -22,8 +24,10 @@ enum MuscleGroup: String, Codable, CaseIterable, Identifiable, Sendable {
         case .shoulders: "Shoulders"
         case .biceps: "Biceps"
         case .triceps: "Triceps"
+        case .forearms: "Forearms"
         case .legs: "Legs"
         case .glutes: "Glutes"
+        case .calves: "Calves"
         case .core: "Core"
         case .fullBody: "Full Body"
         case .other: "Other"
@@ -35,8 +39,8 @@ enum MuscleGroup: String, Codable, CaseIterable, Identifiable, Sendable {
         case .chest: "figure.arms.open"
         case .back: "figure.stand"
         case .shoulders: "figure.boxing"
-        case .biceps, .triceps: "figure.strengthtraining.functional"
-        case .legs, .glutes: "figure.step.training"
+        case .biceps, .triceps, .forearms: "figure.strengthtraining.functional"
+        case .legs, .glutes, .calves: "figure.step.training"
         case .core: "figure.core.training"
         case .fullBody: "figure.mixed.cardio"
         case .other: "dumbbell"

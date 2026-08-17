@@ -50,6 +50,10 @@ final class HealthKitService {
         if let water = HKQuantityType.quantityType(forIdentifier: .dietaryWater) {
             types.insert(water)
         }
+        // Raw heart rate stream (the dashboard vitals only cover resting/walking).
+        if let heartRate = HKQuantityType.quantityType(forIdentifier: .heartRate) {
+            types.insert(heartRate)
+        }
         types.insert(HKObjectType.workoutType())
         return types
     }
@@ -61,6 +65,10 @@ final class HealthKitService {
         }
         if let energy = HKQuantityType.quantityType(forIdentifier: .activeEnergyBurned) {
             types.insert(energy)
+        }
+        // Workout effort (1-10), same scale the Workout app asks about.
+        if let effort = HKQuantityType.quantityType(forIdentifier: .workoutEffortScore) {
+            types.insert(effort)
         }
         types.insert(HKObjectType.workoutType())
         return types
@@ -172,6 +180,45 @@ final class HealthKitService {
                 }
                 let total = statistics?.sumQuantity()?.doubleValue(for: unit)
                 continuation.resume(returning: total)
+            }
+            store.execute(query)
+        }
+    }
+
+    // MARK: - Heart rate
+
+    /// The newest heart rate sample from the last 4 hours, in BPM.
+    ///
+    /// Without a watch app streaming live, "current" means the most recent
+    /// reading the watch has synced -- typically a few minutes old. The
+    /// timestamp is returned so the UI can be honest about that.
+    func latestHeartRate() async throws -> (bpm: Double, date: Date)? {
+        guard let type = HKQuantityType.quantityType(forIdentifier: .heartRate) else {
+            return nil
+        }
+        let unit = HKUnit.count().unitDivided(by: .minute())
+        let start = Date.now.addingTimeInterval(-4 * 3600)
+        let predicate = HKQuery.predicateForSamples(withStart: start, end: .now)
+        let sort = [NSSortDescriptor(key: HKSampleSortIdentifierEndDate, ascending: false)]
+
+        return try await withCheckedThrowingContinuation { continuation in
+            let query = HKSampleQuery(
+                sampleType: type,
+                predicate: predicate,
+                limit: 1,
+                sortDescriptors: sort
+            ) { _, samples, error in
+                if let error {
+                    continuation.resume(throwing: error)
+                    return
+                }
+                guard let sample = samples?.first as? HKQuantitySample else {
+                    continuation.resume(returning: nil)
+                    return
+                }
+                let bpm = sample.quantity.doubleValue(for: unit)
+                let date = sample.endDate
+                continuation.resume(returning: (bpm, date))
             }
             store.execute(query)
         }
@@ -295,10 +342,15 @@ final class HealthKitService {
 
     /// Writes a finished lifting session to Health so it shows up in the Fitness
     /// and Health apps -- and so it survives deleting this app.
+    ///
+    /// `effortScore` (1...10) is saved as a workout effort sample and related to
+    /// the workout, which is exactly what the Workout app's own "Effort" prompt
+    /// does. Passing `nil` skips it.
     func saveStrengthWorkout(
         start: Date,
         end: Date,
-        activeEnergyKcal: Double?
+        activeEnergyKcal: Double?,
+        effortScore: Int? = nil
     ) async throws {
         let configuration = HKWorkoutConfiguration()
         configuration.activityType = .traditionalStrengthTraining
@@ -324,6 +376,28 @@ final class HealthKitService {
         }
 
         try await builder.endCollection(at: end)
-        _ = try await builder.finishWorkout()
+        let workout = try await builder.finishWorkout()
+
+        if let workout, let effortScore {
+            try await relateEffort(effortScore, to: workout)
+        }
+    }
+
+    /// Saves an effort score sample and links it to the workout.
+    /// Effort failures are deliberately not fatal: the workout itself is already
+    /// in Health by the time this runs.
+    private func relateEffort(_ score: Int, to workout: HKWorkout) async throws {
+        guard let effortType = HKQuantityType.quantityType(forIdentifier: .workoutEffortScore) else {
+            return
+        }
+        let clamped = min(max(score, 1), 10)
+        let sample = HKQuantitySample(
+            type: effortType,
+            quantity: HKQuantity(unit: .appleEffortScore(), doubleValue: Double(clamped)),
+            start: workout.startDate,
+            end: workout.endDate
+        )
+        try await store.save(sample)
+        try await store.relateWorkoutEffortSample(sample, with: workout, activity: nil)
     }
 }

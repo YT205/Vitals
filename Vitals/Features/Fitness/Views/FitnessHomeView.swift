@@ -1,12 +1,16 @@
 import SwiftData
 import SwiftUI
 
-/// Fitness tab: your saved workouts, plus a way in to a live session.
+/// Fitness tab: heart rate, your saved workouts (drag to reorder), progress
+/// charts, history, and a month calendar of training days.
 struct FitnessHomeView: View {
     @Environment(\.modelContext) private var context
     @Environment(AppSettings.self) private var settings
 
-    @Query(sort: \WorkoutTemplate.name)
+    @Query(sort: [
+        SortDescriptor(\WorkoutTemplate.sortOrder),
+        SortDescriptor(\WorkoutTemplate.name),
+    ])
     private var templates: [WorkoutTemplate]
 
     /// There should only ever be one, but querying defensively avoids a crash if
@@ -18,11 +22,18 @@ struct FitnessHomeView: View {
     @State private var editingTemplate: WorkoutTemplate?
     @State private var draftTemplate: WorkoutTemplate?
 
+    @State private var heartRate: (bpm: Double, date: Date)?
+    @State private var isLoadingHeartRate = false
+
     private var activeSession: WorkoutSession? { activeSessions.first }
 
     var body: some View {
         NavigationStack {
             List {
+                Section { heartRateCard }
+                    .listRowInsets(EdgeInsets())
+                    .listRowBackground(Color.clear)
+
                 if let activeSession {
                     Section {
                         resumeRow(activeSession)
@@ -41,9 +52,17 @@ struct FitnessHomeView: View {
                             templateRow(template)
                         }
                         .onDelete(perform: deleteTemplates)
+                        .onMove(perform: moveTemplates)
                     }
                 } header: {
-                    Text("My Workouts")
+                    HStack {
+                        Text("My Workouts")
+                        Spacer()
+                        if templates.count > 1 {
+                            EditButton()
+                                .font(.caption)
+                        }
+                    }
                 }
 
                 Section {
@@ -53,18 +72,24 @@ struct FitnessHomeView: View {
                         Label("New Workout", systemImage: "plus")
                     }
 
-                    Button {
-                        startEmptyWorkout()
+                    NavigationLink {
+                        ExerciseProgressView()
                     } label: {
-                        Label("Start Empty Workout", systemImage: "bolt")
+                        Label("Progress", systemImage: "chart.line.uptrend.xyaxis")
                     }
-                    .disabled(activeSession != nil)
 
                     NavigationLink {
                         WorkoutHistoryView()
                     } label: {
                         Label("History", systemImage: "clock.arrow.circlepath")
                     }
+                }
+
+                Section {
+                    WorkoutCalendarView()
+                        .padding(.vertical, 4)
+                } header: {
+                    Text("Training Days")
                 }
             }
             .navigationTitle("Fitness")
@@ -79,7 +104,68 @@ struct FitnessHomeView: View {
             .sheet(item: $draftTemplate) { template in
                 TemplateEditorView(template: template, isNew: true)
             }
+            .task { await refreshHeartRate() }
+            .refreshable { await refreshHeartRate() }
         }
+    }
+
+    // MARK: - Heart rate
+
+    private var heartRateCard: some View {
+        Card(padding: 14) {
+            HStack(spacing: 12) {
+                Image(systemName: "heart.fill")
+                    .font(.title2)
+                    .foregroundStyle(.red)
+                    .symbolEffect(.pulse, isActive: heartRate != nil)
+
+                VStack(alignment: .leading, spacing: 1) {
+                    if let heartRate {
+                        HStack(alignment: .firstTextBaseline, spacing: 3) {
+                            Text("\(Int(heartRate.bpm.rounded()))")
+                                .font(.title2.weight(.semibold))
+                                .contentTransition(.numericText())
+                            Text("BPM")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        Text("as of \(heartRate.date.formatted(date: .omitted, time: .shortened))")
+                            .font(.caption2)
+                            .foregroundStyle(.tertiary)
+                    } else {
+                        Text("--")
+                            .font(.title2.weight(.semibold))
+                            .foregroundStyle(.tertiary)
+                        Text("No recent reading from your watch")
+                            .font(.caption2)
+                            .foregroundStyle(.tertiary)
+                    }
+                }
+
+                Spacer()
+
+                Button {
+                    Task { await refreshHeartRate() }
+                } label: {
+                    if isLoadingHeartRate {
+                        ProgressView()
+                    } else {
+                        Image(systemName: "arrow.clockwise")
+                    }
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .accessibilityLabel("Refresh heart rate")
+            }
+        }
+        .padding(.horizontal)
+        .padding(.top, 4)
+    }
+
+    private func refreshHeartRate() async {
+        isLoadingHeartRate = true
+        heartRate = try? await HealthKitService.shared.latestHeartRate()
+        isLoadingHeartRate = false
     }
 
     // MARK: - Rows
@@ -145,6 +231,7 @@ struct FitnessHomeView: View {
 
     private func createTemplate() {
         let template = WorkoutTemplate(name: "")
+        template.sortOrder = (templates.map(\.sortOrder).max() ?? -1) + 1
         context.insert(template)
         draftTemplate = template
     }
@@ -172,18 +259,27 @@ struct FitnessHomeView: View {
         launch = WorkoutLaunch(session: session, template: template)
     }
 
-    private func startEmptyWorkout() {
-        let session = WorkoutSession(title: "Quick Workout")
-        context.insert(session)
-        try? context.save()
-        launch = WorkoutLaunch(session: session, template: nil)
-    }
-
     private func deleteTemplates(at offsets: IndexSet) {
         for index in offsets {
             context.delete(templates[index])
         }
+        renumberTemplates()
         try? context.save()
+    }
+
+    private func moveTemplates(from source: IndexSet, to destination: Int) {
+        var reordered = templates
+        reordered.move(fromOffsets: source, toOffset: destination)
+        for (index, template) in reordered.enumerated() {
+            template.sortOrder = index
+        }
+        try? context.save()
+    }
+
+    private func renumberTemplates() {
+        for (index, template) in templates.enumerated() {
+            template.sortOrder = index
+        }
     }
 }
 

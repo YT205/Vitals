@@ -4,6 +4,10 @@ import UIKit
 
 /// The live logging screen. Every edit writes straight to SwiftData, so leaving
 /// the app mid-workout loses nothing.
+///
+/// Deliberately minimal: no adding exercises or sets mid-workout. The plan is
+/// the plan; change the template if the plan changes. Finishing (and the
+/// under-10-minute discard) goes through `FinishWorkoutSheet`.
 struct ActiveWorkoutView: View {
     @Environment(\.modelContext) private var context
     @Environment(\.dismiss) private var dismiss
@@ -15,9 +19,9 @@ struct ActiveWorkoutView: View {
     var template: WorkoutTemplate?
 
     @State private var model = ActiveWorkoutViewModel()
-    @State private var showingPicker = false
-    @State private var confirmFinish = false
-    @State private var confirmDiscard = false
+    @State private var showingFinishSheet = false
+    /// Set by the sheet, executed in `onDismiss` -- never during dismissal.
+    @State private var pendingAction: FinishAction?
 
     /// Sets grouped by exercise, in the order the exercises were added.
     private var groups: [ExerciseGroup] {
@@ -58,6 +62,8 @@ struct ActiveWorkoutView: View {
                             model.startRest(seconds: settings.defaultRestSeconds)
                         }
                         .swipeActions(edge: .trailing) {
+                            // Swipe away sets you skipped -- anything left with
+                            // data in it gets saved at finish.
                             Button(role: .destructive) {
                                 model.delete(entry, context: context)
                             } label: {
@@ -76,13 +82,6 @@ struct ActiveWorkoutView: View {
                             .tint(.orange)
                         }
                     }
-
-                    Button {
-                        model.addSet(toExercise: group.name, in: session, context: context)
-                    } label: {
-                        Label("Add Set", systemImage: "plus")
-                            .font(.subheadline)
-                    }
                 } header: {
                     HStack {
                         Text(group.name)
@@ -90,20 +89,6 @@ struct ActiveWorkoutView: View {
                         Text(group.muscleGroup.label)
                             .foregroundStyle(.tertiary)
                     }
-                }
-            }
-
-            Section {
-                Button {
-                    showingPicker = true
-                } label: {
-                    Label("Add Exercise", systemImage: "plus.circle")
-                }
-
-                Button(role: .destructive) {
-                    confirmDiscard = true
-                } label: {
-                    Label("Discard Workout", systemImage: "trash")
                 }
             }
 
@@ -118,47 +103,26 @@ struct ActiveWorkoutView: View {
         .listStyle(.insetGrouped)
         .navigationTitle(session.title)
         .navigationBarTitleDisplayMode(.inline)
+        .navigationBarBackButtonHidden(model.isSaving)
         .scrollDismissesKeyboard(.interactively)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
-                Button("Finish") { confirmFinish = true }
-                    .fontWeight(.semibold)
-                    .disabled(model.isSaving)
+                if model.isSaving {
+                    ProgressView()
+                } else {
+                    Button("Finish") { showingFinishSheet = true }
+                        .fontWeight(.semibold)
+                }
             }
             ToolbarItemGroup(placement: .keyboard) {
                 Spacer()
                 Button("Done") { hideKeyboard() }
             }
         }
-        .sheet(isPresented: $showingPicker) {
-            ExercisePickerView(
-                excluding: Set(session.sets.map(\.exerciseName))
-            ) { exercises in
-                model.addExercises(exercises, to: session, context: context)
+        .sheet(isPresented: $showingFinishSheet, onDismiss: handlePendingAction) {
+            FinishWorkoutSheet(session: session) { action in
+                pendingAction = action
             }
-        }
-        .confirmationDialog(
-            "Finish this workout?",
-            isPresented: $confirmFinish,
-            titleVisibility: .visible
-        ) {
-            Button("Finish and Save") { finish() }
-            Button("Keep Going", role: .cancel) {}
-        } message: {
-            Text("\(session.completedSets.count) sets logged. Unfinished sets are dropped, and the workout is written to Apple Health.")
-        }
-        .confirmationDialog(
-            "Discard this workout?",
-            isPresented: $confirmDiscard,
-            titleVisibility: .visible
-        ) {
-            Button("Discard", role: .destructive) {
-                model.discard(session: session, context: context)
-                dismiss()
-            }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("This can't be undone.")
         }
     }
 
@@ -218,14 +182,27 @@ struct ActiveWorkoutView: View {
 
     // MARK: - Actions
 
-    private func finish() {
-        Task {
-            await model.finish(
-                session: session,
-                template: template,
-                context: context
-            )
+    /// Runs after the finish sheet has fully dismissed. Doing the work here --
+    /// not in the sheet's buttons -- is what fixes the discard freeze: the
+    /// session is never deleted while a presentation is mid-flight.
+    private func handlePendingAction() {
+        guard let action = pendingAction else { return }
+        pendingAction = nil
+
+        switch action {
+        case .save(let effortScore):
+            Task {
+                await model.finish(
+                    session: session,
+                    template: template,
+                    effortScore: effortScore,
+                    context: context
+                )
+                dismiss()
+            }
+        case .discard:
             dismiss()
+            model.discardAfterDismiss(session: session, context: context)
         }
     }
 

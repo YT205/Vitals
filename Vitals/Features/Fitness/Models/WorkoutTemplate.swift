@@ -8,6 +8,8 @@ final class WorkoutTemplate {
     var notes: String = ""
     var createdAt: Date = Date.now
     var lastPerformedAt: Date?
+    /// Manual position in the Fitness tab list (drag to reorder).
+    var sortOrder: Int = 0
 
     @Relationship(deleteRule: .cascade, inverse: \TemplateItem.template)
     var items: [TemplateItem] = []

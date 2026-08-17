@@ -11,6 +11,9 @@ final class WorkoutSession {
     var notes: String = ""
     /// `true` once the session has been mirrored into HealthKit.
     var savedToHealthKit: Bool = false
+    /// Apple Health workout effort, 1...10. `nil` when skipped.
+    /// 1-3 Easy, 4-6 Moderate, 7-8 Hard, 9-10 All Out.
+    var effortScore: Int?
 
     @Relationship(deleteRule: .cascade, inverse: \SetEntry.session)
     var sets: [SetEntry] = []
