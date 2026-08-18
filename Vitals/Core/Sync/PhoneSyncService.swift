@@ -5,13 +5,23 @@ import WatchConnectivity
 /// The iPhone end of watch sync.
 ///
 /// Outbound: the template library and unit preferences, pushed as application
-/// context whenever templates change (and on every activation, so a fresh
-/// watch install catches up immediately).
+/// context whenever templates change, when the session activates, and when
+/// the watch app first becomes installed (`sessionWatchStateDidChange`) --
+/// that last one is what makes install order not matter. The watch can also
+/// request the library directly via message when both apps are live.
 /// Inbound: finished watch workouts, ingested into SwiftData exactly like a
 /// phone-logged session -- history, progress charts and plan write-back all
 /// see them. The HKWorkout itself was already written by the watch.
+@MainActor
+@Observable
 final class PhoneSyncService: NSObject {
     static let shared = PhoneSyncService()
+
+    // Status, surfaced in Settings so sync failures are visible, not silent.
+    private(set) var isPaired = false
+    private(set) var isWatchAppInstalled = false
+    private(set) var lastPushAt: Date?
+    private(set) var lastError: String?
 
     private override init() {
         super.init()
@@ -22,28 +32,34 @@ final class PhoneSyncService: NSObject {
         return WCSession.default
     }
 
-    /// Call once at launch. Safe to call repeatedly.
+    /// Call once at launch. Safe to call repeatedly; pushes if already active.
     func activate() {
         guard let session else { return }
         session.delegate = self
-        if session.activationState != .activated {
+        if session.activationState == .activated {
+            refreshStatus()
+            pushTemplates()
+        } else {
             session.activate()
         }
     }
 
+    private func refreshStatus() {
+        guard let session else { return }
+        isPaired = session.isPaired
+        isWatchAppInstalled = session.isWatchAppInstalled
+    }
+
     // MARK: - Outbound: templates + preferences
 
-    /// Snapshots every template into the wire format and pushes it. Runs its
-    /// own fetch so callers don't need to pass a context.
-    @MainActor
-    func pushTemplates(settings: AppSettings? = nil) {
-        guard let session, session.activationState == .activated else { return }
-
+    /// Snapshots every template into the wire format. Used for both the
+    /// context push and direct replies to watch requests.
+    private func templatesPayload(settings: AppSettings? = nil) -> [String: Any]? {
         let context = ModelContext(VitalsModelContainer.shared)
         let descriptor = FetchDescriptor<WorkoutTemplate>(
             sortBy: [SortDescriptor(\.sortOrder)]
         )
-        guard let templates = try? context.fetch(descriptor) else { return }
+        guard let templates = try? context.fetch(descriptor) else { return nil }
 
         let payload = templates.map { template in
             SyncTemplate(
@@ -66,25 +82,44 @@ final class PhoneSyncService: NSObject {
             )
         }
 
-        guard let data = SyncCoder.encode(payload) else { return }
+        guard let data = SyncCoder.encode(payload) else { return nil }
 
-        var contextDict: [String: Any] = [
+        var dict: [String: Any] = [
             SyncKeys.templates: data,
             // Uniquify each push; identical contexts are rejected by the API.
             SyncKeys.pushedAt: Date.now.timeIntervalSince1970,
         ]
         if let settings {
-            contextDict[SyncKeys.weightUnit] = settings.weightUnit.rawValue
-            contextDict[SyncKeys.volumeUnit] = settings.volumeUnit.rawValue
-            contextDict[SyncKeys.waterGoalML] = settings.dailyWaterGoalML
+            dict[SyncKeys.weightUnit] = settings.weightUnit.rawValue
+            dict[SyncKeys.volumeUnit] = settings.volumeUnit.rawValue
+            dict[SyncKeys.waterGoalML] = settings.dailyWaterGoalML
         }
+        return dict
+    }
 
-        try? session.updateApplicationContext(contextDict)
+    /// Pushes the library as application context (latest state wins, delivered
+    /// to the watch whenever it's ready). Errors are kept, not swallowed.
+    func pushTemplates(settings: AppSettings? = nil) {
+        guard let session, session.activationState == .activated else {
+            lastError = "Sync session not active yet."
+            return
+        }
+        refreshStatus()
+        guard let dict = templatesPayload(settings: settings) else { return }
+
+        do {
+            try session.updateApplicationContext(dict)
+            lastPushAt = .now
+            lastError = nil
+        } catch {
+            // Most commonly: watch not paired, or the watch app not installed
+            // yet. sessionWatchStateDidChange retries when that changes.
+            lastError = error.localizedDescription
+        }
     }
 
     // MARK: - Inbound: finished watch workouts
 
-    @MainActor
     private func ingest(_ finished: SyncFinishedWorkout) {
         let context = ModelContext(VitalsModelContainer.shared)
 
@@ -120,7 +155,6 @@ final class PhoneSyncService: NSObject {
 
     /// Same write-back the phone's finish flow does: performed weights and
     /// reps update the matching plan sets so next session is prefilled.
-    @MainActor
     private func writeBackToTemplate(_ workout: WorkoutSession, context: ModelContext) {
         let title = workout.title
         let descriptor = FetchDescriptor<WorkoutTemplate>(
@@ -152,26 +186,53 @@ final class PhoneSyncService: NSObject {
 // MARK: - WCSessionDelegate
 
 extension PhoneSyncService: WCSessionDelegate {
-    func session(
+    nonisolated func session(
         _ session: WCSession,
         activationDidCompleteWith activationState: WCSessionActivationState,
         error: Error?
     ) {
         guard activationState == .activated else { return }
         Task { @MainActor in
+            self.refreshStatus()
             self.pushTemplates()
         }
     }
 
-    func sessionDidBecomeInactive(_ session: WCSession) {}
+    nonisolated func sessionDidBecomeInactive(_ session: WCSession) {}
 
-    func sessionDidDeactivate(_ session: WCSession) {
+    nonisolated func sessionDidDeactivate(_ session: WCSession) {
         // Re-activate after a watch switch.
         session.activate()
     }
 
+    /// Fires when pairing changes or the watch app gets installed -- the fix
+    /// for "ran the phone app before the watch app existed".
+    nonisolated func sessionWatchStateDidChange(_ session: WCSession) {
+        Task { @MainActor in
+            self.refreshStatus()
+            if session.isPaired && session.isWatchAppInstalled {
+                self.pushTemplates()
+            }
+        }
+    }
+
+    /// The watch asking for the library right now (both apps live).
+    nonisolated func session(
+        _ session: WCSession,
+        didReceiveMessage message: [String: Any],
+        replyHandler: @escaping ([String: Any]) -> Void
+    ) {
+        guard message[SyncKeys.requestTemplates] != nil else {
+            replyHandler([:])
+            return
+        }
+        Task { @MainActor in
+            replyHandler(self.templatesPayload() ?? [:])
+        }
+    }
+
     /// Finished workouts arrive here, queued until the phone was reachable.
-    func session(
+    nonisolated func session(
         _ session: WCSession,
         didReceiveUserInfo userInfo: [String: Any] = [:]
     ) {

@@ -16,6 +16,8 @@ enum SyncKeys {
     static let waterGoalML = "waterGoalML"
     static let pushedAt = "pushedAt"
     static let finishedWorkout = "finishedWorkout"
+    /// Watch -> phone live message asking for an immediate library reply.
+    static let requestTemplates = "requestTemplates"
 }
 
 // MARK: - Phone -> Watch

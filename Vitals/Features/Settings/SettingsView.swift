@@ -5,6 +5,8 @@ struct SettingsView: View {
     @Environment(AppSettings.self) private var settings
     @Environment(\.dismiss) private var dismiss
 
+    private var sync: PhoneSyncService { .shared }
+
     var body: some View {
         NavigationStack {
             Form {
@@ -50,6 +52,29 @@ struct SettingsView: View {
                     Text("Health Access")
                 } footer: {
                     Text("Permissions live in Health under Sharing, then Apps & Services. iOS never reports read access back to apps, so if a card shows no data, check there first.")
+                }
+
+                Section {
+                    LabeledContent("Watch paired", value: sync.isPaired ? "Yes" : "No")
+                    LabeledContent("Watch app installed", value: sync.isWatchAppInstalled ? "Yes" : "No")
+                    if let pushed = sync.lastPushAt {
+                        LabeledContent(
+                            "Workouts pushed",
+                            value: pushed.formatted(date: .omitted, time: .shortened)
+                        )
+                    }
+                    if let error = sync.lastError {
+                        Text(error)
+                            .font(.footnote)
+                            .foregroundStyle(.orange)
+                    }
+                    Button("Push Workouts to Watch Now") {
+                        PhoneSyncService.shared.pushTemplates(settings: settings)
+                    }
+                } header: {
+                    Text("Apple Watch Sync")
+                } footer: {
+                    Text("Workouts push automatically when they change. Use the button if the watch looks stale.")
                 }
             }
             .navigationTitle("Settings")

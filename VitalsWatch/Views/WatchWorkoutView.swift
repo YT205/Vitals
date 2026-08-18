@@ -30,6 +30,14 @@ struct WatchWorkoutView: View {
                             .font(.caption2)
                             .foregroundStyle(.secondary)
                             .multilineTextAlignment(.center)
+
+                        Button {
+                            sync.requestTemplates()
+                        } label: {
+                            Label("Sync Now", systemImage: "arrow.triangle.2.circlepath")
+                                .font(.caption2)
+                        }
+                        .buttonStyle(.bordered)
                     }
                     .padding(.horizontal, 6)
                 } else {
@@ -55,6 +63,16 @@ struct WatchWorkoutView: View {
                 }
             }
             .navigationTitle("Workout")
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        sync.requestTemplates()
+                    } label: {
+                        Image(systemName: "arrow.triangle.2.circlepath")
+                    }
+                    .accessibilityLabel("Sync workouts from iPhone")
+                }
+            }
         }
     }
 

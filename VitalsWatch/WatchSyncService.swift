@@ -52,6 +52,25 @@ final class WatchSyncService: NSObject {
         session.transferUserInfo([SyncKeys.finishedWorkout: data])
     }
 
+    /// Asks the phone for the library right now. Works only while the phone
+    /// app is reachable (foreground or recently backgrounded); the application
+    /// context path covers every other case eventually.
+    func requestTemplates() {
+        guard let session,
+              session.activationState == .activated,
+              session.isReachable else { return }
+
+        session.sendMessage(
+            [SyncKeys.requestTemplates: true],
+            replyHandler: { reply in
+                Task { @MainActor in
+                    self.apply(reply)
+                }
+            },
+            errorHandler: nil
+        )
+    }
+
     // MARK: - Applying pushes
 
     fileprivate func apply(_ context: [String: Any]) {
@@ -88,9 +107,15 @@ extension WatchSyncService: WCSessionDelegate {
         guard activationState == .activated else { return }
         // The context the phone pushed while we weren't running.
         let cached = session.receivedApplicationContext
-        guard !cached.isEmpty else { return }
         Task { @MainActor in
-            self.apply(cached)
+            if !cached.isEmpty {
+                self.apply(cached)
+            }
+            // Nothing cached or nothing stored: ask the phone directly, in
+            // case it's live right now (covers the fresh-install case).
+            if self.templates.isEmpty {
+                self.requestTemplates()
+            }
         }
     }
 
