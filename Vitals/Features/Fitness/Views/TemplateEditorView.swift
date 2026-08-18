@@ -17,20 +17,11 @@ struct TemplateEditorView: View {
 
     @State private var showingPicker = false
     @State private var showingReorder = false
-    @State private var createdStretchRoutine = false
-    @State private var createdMassageRoutine = false
     /// Weight or reps value being edited via the bottom number pad.
     @State private var padTarget: NumberPadTarget?
 
     private var canSave: Bool {
         !template.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-    }
-
-    private var templateGroups: [MuscleGroup] {
-        var seen = Set<MuscleGroup>()
-        return template.orderedItems.compactMap { item in
-            seen.insert(item.muscleGroup).inserted ? item.muscleGroup : nil
-        }
     }
 
     var body: some View {
@@ -64,41 +55,6 @@ struct TemplateEditorView: View {
                     }
                 }
 
-                Section {
-                    Button {
-                        createRecoveryRoutine(kind: .stretching)
-                        createdStretchRoutine = true
-                    } label: {
-                        Label(
-                            createdStretchRoutine
-                                ? "Stretch Routine Created"
-                                : "Create Stretch Routine",
-                            systemImage: createdStretchRoutine
-                                ? "checkmark.circle.fill"
-                                : "figure.flexibility"
-                        )
-                    }
-                    .disabled(template.items.isEmpty || createdStretchRoutine)
-
-                    Button {
-                        createRecoveryRoutine(kind: .massageGun)
-                        createdMassageRoutine = true
-                    } label: {
-                        Label(
-                            createdMassageRoutine
-                                ? "Massage Gun Routine Created"
-                                : "Create Massage Gun Routine",
-                            systemImage: createdMassageRoutine
-                                ? "checkmark.circle.fill"
-                                : "waveform.badge.magnifyingglass"
-                        )
-                    }
-                    .disabled(template.items.isEmpty || createdMassageRoutine)
-                } header: {
-                    Text("Recovery")
-                } footer: {
-                    Text("Each builds a sequence for this workout's muscle groups and saves it to the Recovery tab. Cancelling this editor removes them again.")
-                }
             }
             .navigationTitle(isNew ? "New Workout" : "Edit Workout")
             .navigationBarTitleDisplayMode(.inline)
@@ -311,18 +267,6 @@ struct TemplateEditorView: View {
     private func deleteItem(_ item: TemplateItem) {
         context.delete(item)
         renumber()
-    }
-
-    private func createRecoveryRoutine(kind: RecoveryKind) {
-        let trimmed = template.name.trimmingCharacters(in: .whitespacesAndNewlines)
-        let baseName = trimmed.isEmpty ? "Workout" : trimmed
-        let suffix = kind == .massageGun ? "Massage Gun" : "Stretch"
-        let routine = RecoveryLibrary.generatedRoutine(
-            named: "\(baseName) \(suffix)",
-            for: templateGroups,
-            kind: kind
-        )
-        context.insert(routine)
     }
 
     private func addExercises(_ exercises: [Exercise]) {

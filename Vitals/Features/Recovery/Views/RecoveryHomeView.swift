@@ -21,6 +21,7 @@ struct RecoveryHomeView: View {
 
     @State private var editingRoutine: RecoveryRoutine?
     @State private var draftRoutine: RecoveryRoutine?
+    @State private var showingAI = false
 
     /// Muscle groups trained in the last 3 days, mapped to the most recent day
     /// each was hit.
@@ -74,11 +75,31 @@ struct RecoveryHomeView: View {
     var body: some View {
         NavigationStack {
             List {
+                Section {
+                    Button {
+                        showingAI = true
+                    } label: {
+                        HStack(spacing: 10) {
+                            Image(systemName: "sparkles")
+                                .font(.title3)
+                                .foregroundStyle(.tint)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("AI Recovery Assistant")
+                                    .font(.body.weight(.medium))
+                                    .foregroundStyle(.primary)
+                                Text("Build a stretch or massage plan from a workout and your goals")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+                }
+
                 if routines.isEmpty {
                     EmptyStateView(
                         systemImage: "figure.cooldown",
                         title: "No routines yet",
-                        message: "Build a stretching or massage gun sequence and run it with a guided timer.",
+                        message: "Generate one with the assistant above, or build one by hand with the + button.",
                         actionTitle: "New Routine",
                         action: createRoutine
                     )
@@ -148,6 +169,9 @@ struct RecoveryHomeView: View {
             }
             .sheet(item: $draftRoutine) { routine in
                 RoutineEditorView(routine: routine, isNew: true)
+            }
+            .sheet(isPresented: $showingAI) {
+                AIRecoveryView()
             }
         }
     }
