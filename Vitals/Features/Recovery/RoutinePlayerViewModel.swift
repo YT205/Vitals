@@ -1,6 +1,5 @@
 import Foundation
 import Observation
-import UIKit
 
 /// Drives the guided, timed run-through of a recovery routine.
 ///
@@ -176,20 +175,4 @@ final class RoutinePlayerViewModel {
     }
 }
 
-/// Small wrapper so haptics stay in one place.
-enum Haptics {
-    @MainActor
-    static func stageComplete() {
-        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-    }
-
-    @MainActor
-    static func routineComplete() {
-        UINotificationFeedbackGenerator().notificationOccurred(.success)
-    }
-
-    @MainActor
-    static func light() {
-        UIImpactFeedbackGenerator(style: .light).impactOccurred()
-    }
-}
+// Haptics moved to Core/Haptics.swift so watchOS targets can share this file.

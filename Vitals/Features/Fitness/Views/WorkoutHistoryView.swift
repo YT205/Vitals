@@ -136,25 +136,75 @@ struct WorkoutDetailView: View {
 
             ForEach(groups, id: \.name) { group in
                 Section(group.name) {
+                    setColumnHeader
                     ForEach(group.sets) { entry in
-                        HStack {
-                            Text(entry.isWarmup ? "Warmup" : "Set \(entry.setNumber)")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                            if entry.durationSeconds > 0 {
-                                Text(WorkoutSession.formatMinutesSeconds(entry.durationSeconds))
-                                    .font(.caption2.monospacedDigit())
-                                    .foregroundStyle(.tertiary)
-                            }
-                            Spacer()
-                            Text("\(settings.formattedWeight(fromKilograms: entry.weightKg)) x \(entry.reps)")
-                                .font(.callout.weight(.medium))
-                        }
+                        setTableRow(entry)
                     }
                 }
             }
         }
         .navigationTitle(session.title)
         .navigationBarTitleDisplayMode(.inline)
+    }
+
+    // MARK: - Set table (same look as the workout preview)
+
+    private var setColumnHeader: some View {
+        HStack(spacing: 10) {
+            Text("Set")
+                .frame(width: 24)
+            Text(settings.weightUnit.label.uppercased())
+                .frame(maxWidth: .infinity)
+            Text("")
+                .font(.caption)
+            Text("REPS")
+                .frame(maxWidth: .infinity)
+            Text("TIME")
+                .frame(width: 44)
+        }
+        .font(.caption2.weight(.semibold))
+        .foregroundStyle(.tertiary)
+    }
+
+    private func setTableRow(_ entry: SetEntry) -> some View {
+        HStack(spacing: 10) {
+            Text(entry.isWarmup ? "W" : "\(entry.setNumber)")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(entry.isWarmup ? .orange : .secondary)
+                .frame(width: 24, height: 24)
+                .background(
+                    Circle().fill(entry.isWarmup ? .orange.opacity(0.15) : .gray.opacity(0.15))
+                )
+
+            Text(
+                settings.displayWeight(fromKilograms: entry.weightKg)
+                    .formatted(.number.precision(.fractionLength(0...1)))
+            )
+            .font(.callout)
+            .multilineTextAlignment(.center)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 4)
+            .background(.background.secondary, in: .rect(cornerRadius: 7))
+
+            Text("x")
+                .font(.caption)
+                .foregroundStyle(.tertiary)
+
+            Text("\(entry.reps)")
+                .font(.callout)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 4)
+                .background(.background.secondary, in: .rect(cornerRadius: 7))
+
+            Text(
+                entry.durationSeconds > 0
+                    ? WorkoutSession.formatMinutesSeconds(entry.durationSeconds)
+                    : "--"
+            )
+            .font(.caption2.monospacedDigit())
+            .foregroundStyle(.tertiary)
+            .frame(width: 44)
+        }
     }
 }

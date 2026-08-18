@@ -16,8 +16,11 @@ struct TemplateEditorView: View {
     let isNew: Bool
 
     @State private var showingPicker = false
+    @State private var showingReorder = false
     @State private var createdStretchRoutine = false
     @State private var createdMassageRoutine = false
+    /// Weight or reps value being edited via the bottom number pad.
+    @State private var padTarget: NumberPadTarget?
 
     private var canSave: Bool {
         !template.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -108,10 +111,26 @@ struct TemplateEditorView: View {
                     Button("Save") { save() }
                         .disabled(!canSave)
                 }
+                ToolbarItem(placement: .topBarLeading) {
+                    if template.items.count > 1 {
+                        Button {
+                            showingReorder = true
+                        } label: {
+                            Image(systemName: "arrow.up.arrow.down")
+                        }
+                        .accessibilityLabel("Reorder exercises")
+                    }
+                }
                 ToolbarItemGroup(placement: .keyboard) {
                     Spacer()
                     Button("Done") { hideKeyboard() }
                 }
+            }
+            .sheet(isPresented: $showingReorder) {
+                ReorderExercisesSheet(template: template)
+            }
+            .sheet(item: $padTarget) { target in
+                NumberPadSheet(target: target)
             }
             .sheet(isPresented: $showingPicker) {
                 ExercisePickerView(
@@ -140,7 +159,7 @@ struct TemplateEditorView: View {
             PlanSetHeaderRow()
 
             ForEach(item.orderedSets) { planSet in
-                planSetRow(planSet)
+                planSetRow(planSet, itemName: item.exerciseName)
                     .swipeActions(edge: .trailing) {
                         Button(role: .destructive) {
                             deleteSet(planSet, from: item)
@@ -212,7 +231,7 @@ struct TemplateEditorView: View {
         }
     }
 
-    private func planSetRow(_ planSet: TemplateSet) -> some View {
+    private func planSetRow(_ planSet: TemplateSet, itemName: String) -> some View {
         HStack(spacing: 10) {
             Text("\(planSet.setNumber)")
                 .font(.caption.weight(.semibold))
@@ -220,32 +239,53 @@ struct TemplateEditorView: View {
                 .frame(width: 24, height: 24)
                 .background(Circle().fill(.gray.opacity(0.15)))
 
-            TextField("0", value: Binding(
-                get: { settings.displayWeight(fromKilograms: planSet.weightKg) },
-                set: { planSet.weightKg = settings.kilograms(fromDisplayWeight: $0) }
-            ), format: .number.precision(.fractionLength(0...1)))
-                .keyboardType(.decimalPad)
-                .multilineTextAlignment(.center)
-                .font(.callout)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 4)
-                .background(.background.secondary, in: .rect(cornerRadius: 7))
+            planValueBox(
+                settings.displayWeight(fromKilograms: planSet.weightKg)
+                    .formatted(.number.precision(.fractionLength(0...1))),
+                isPlaceholder: planSet.weightKg <= 0
+            ) {
+                padTarget = NumberPadTarget(
+                    title: "\(itemName) · Set \(planSet.setNumber)",
+                    unit: settings.weightUnit.label,
+                    allowsDecimal: true,
+                    initialValue: settings.displayWeight(fromKilograms: planSet.weightKg)
+                ) { value in
+                    planSet.weightKg = settings.kilograms(fromDisplayWeight: value)
+                }
+            }
 
             Text("x")
                 .font(.caption)
                 .foregroundStyle(.tertiary)
 
-            TextField("0", value: Binding(
-                get: { planSet.reps },
-                set: { planSet.reps = $0 }
-            ), format: .number)
-                .keyboardType(.numberPad)
-                .multilineTextAlignment(.center)
+            planValueBox("\(planSet.reps)", isPlaceholder: planSet.reps <= 0) {
+                padTarget = NumberPadTarget(
+                    title: "\(itemName) · Set \(planSet.setNumber)",
+                    unit: "reps",
+                    allowsDecimal: false,
+                    initialValue: Double(planSet.reps)
+                ) { value in
+                    planSet.reps = Int(value)
+                }
+            }
+        }
+    }
+
+    private func planValueBox(
+        _ text: String,
+        isPlaceholder: Bool,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Text(isPlaceholder ? "--" : text)
                 .font(.callout)
+                .foregroundStyle(isPlaceholder ? .tertiary : .primary)
+                .multilineTextAlignment(.center)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 4)
                 .background(.background.secondary, in: .rect(cornerRadius: 7))
         }
+        .buttonStyle(.plain)
     }
 
     // MARK: - Actions
@@ -332,6 +372,47 @@ struct TemplateEditorView: View {
             from: nil,
             for: nil
         )
+    }
+}
+
+/// Drag-to-reorder every exercise at once. Text-only rows, so a permanently
+/// active edit mode is safe here (unlike the main editor form, where it
+/// fought the text fields).
+private struct ReorderExercisesSheet: View {
+    @Environment(\.dismiss) private var dismiss
+
+    let template: WorkoutTemplate
+
+    var body: some View {
+        NavigationStack {
+            List {
+                ForEach(template.orderedItems) { item in
+                    HStack {
+                        Text(item.exerciseName)
+                        Spacer()
+                        Text(item.muscleGroup.label)
+                            .font(.caption)
+                            .foregroundStyle(.tertiary)
+                    }
+                }
+                .onMove { source, destination in
+                    var ordered = template.orderedItems
+                    ordered.move(fromOffsets: source, toOffset: destination)
+                    for (index, item) in ordered.enumerated() {
+                        item.order = index
+                    }
+                }
+            }
+            .environment(\.editMode, .constant(.active))
+            .navigationTitle("Reorder")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") { dismiss() }
+                }
+            }
+        }
+        .presentationDetents([.medium, .large])
     }
 }
 

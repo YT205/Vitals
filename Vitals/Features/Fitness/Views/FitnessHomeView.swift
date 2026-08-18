@@ -18,13 +18,6 @@ struct FitnessHomeView: View {
     @Query(filter: #Predicate<WorkoutSession> { $0.endedAt == nil })
     private var activeSessions: [WorkoutSession]
 
-    @Query(
-        filter: #Predicate<WorkoutSession> { $0.endedAt != nil },
-        sort: \WorkoutSession.startedAt,
-        order: .reverse
-    )
-    private var finishedSessions: [WorkoutSession]
-
     @State private var launch: WorkoutLaunch?
     @State private var editingTemplate: WorkoutTemplate?
     @State private var draftTemplate: WorkoutTemplate?
@@ -73,18 +66,10 @@ struct FitnessHomeView: View {
                 }
 
                 Section {
-                    ForEach(finishedSessions.prefix(3)) { session in
-                        NavigationLink {
-                            WorkoutDetailView(session: session)
-                        } label: {
-                            recentRow(session)
-                        }
-                    }
-
                     NavigationLink {
                         WorkoutHistoryView()
                     } label: {
-                        Label("Full History", systemImage: "clock.arrow.circlepath")
+                        Label("History", systemImage: "clock.arrow.circlepath")
                     }
 
                     NavigationLink {
@@ -92,8 +77,6 @@ struct FitnessHomeView: View {
                     } label: {
                         Label("Progress", systemImage: "chart.line.uptrend.xyaxis")
                     }
-                } header: {
-                    Text("Recent")
                 }
 
                 Section {
@@ -230,22 +213,6 @@ struct FitnessHomeView: View {
             } label: {
                 Label("Delete Workout", systemImage: "trash")
             }
-        }
-    }
-
-    private func recentRow(_ session: WorkoutSession) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(session.title)
-                .font(.subheadline.weight(.medium))
-            HStack(spacing: 8) {
-                Text(session.startedAt.formatted(.relative(presentation: .named)))
-                Text("·")
-                Text(session.formattedDuration)
-                Text("·")
-                Text(settings.formattedWeight(fromKilograms: session.totalVolumeKg))
-            }
-            .font(.caption2)
-            .foregroundStyle(.secondary)
         }
     }
 

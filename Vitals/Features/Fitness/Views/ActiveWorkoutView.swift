@@ -27,6 +27,8 @@ struct ActiveWorkoutView: View {
     @State private var pendingAction: FinishAction?
     /// Completed exercises the user tapped back open.
     @State private var manuallyExpanded: Set<String> = []
+    /// Weight or reps value being edited via the bottom number pad.
+    @State private var padTarget: NumberPadTarget?
 
     /// Sets grouped by exercise, in the order the exercises were added.
     private var groups: [ExerciseGroup] {
@@ -84,6 +86,30 @@ struct ActiveWorkoutView: View {
                                 onReset: {
                                     withAnimation(.snappy) {
                                         model.resetSet(entry)
+                                    }
+                                },
+                                onEditWeight: {
+                                    padTarget = NumberPadTarget(
+                                        title: "\(entry.exerciseName) · Set \(entry.setNumber)",
+                                        unit: settings.weightUnit.label,
+                                        allowsDecimal: true,
+                                        initialValue: settings.displayWeight(
+                                            fromKilograms: entry.weightKg
+                                        )
+                                    ) { value in
+                                        entry.weightKg = settings.kilograms(
+                                            fromDisplayWeight: value
+                                        )
+                                    }
+                                },
+                                onEditReps: {
+                                    padTarget = NumberPadTarget(
+                                        title: "\(entry.exerciseName) · Set \(entry.setNumber)",
+                                        unit: "reps",
+                                        allowsDecimal: false,
+                                        initialValue: Double(entry.reps)
+                                    ) { value in
+                                        entry.reps = Int(value)
                                     }
                                 }
                             )
@@ -161,6 +187,9 @@ struct ActiveWorkoutView: View {
             FinishWorkoutSheet(session: session) { action in
                 pendingAction = action
             }
+        }
+        .sheet(item: $padTarget) { target in
+            NumberPadSheet(target: target)
         }
         // Live-ish heart rate for the duration of the workout. The task is
         // cancelled automatically when this screen goes away.

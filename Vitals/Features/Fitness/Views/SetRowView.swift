@@ -18,42 +18,55 @@ struct SetRowView: View {
     let onStart: () -> Void
     let onFinish: () -> Void
     let onReset: () -> Void
-
-    private var weightBinding: Binding<Double> {
-        Binding(
-            get: { settings.displayWeight(fromKilograms: entry.weightKg) },
-            set: { entry.weightKg = settings.kilograms(fromDisplayWeight: $0) }
-        )
-    }
+    /// Opens the number pad for this row's weight / reps.
+    let onEditWeight: () -> Void
+    let onEditReps: () -> Void
 
     var body: some View {
         HStack(spacing: 10) {
             setBadge
 
-            TextField("0", value: weightBinding, format: .number.precision(.fractionLength(0...1)))
-                .keyboardType(.decimalPad)
-                .multilineTextAlignment(.center)
-                .font(.callout)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 4)
-                .background(.background.secondary, in: .rect(cornerRadius: 7))
+            // Values open the bottom number pad rather than inline keyboards.
+            valueBox(
+                settings.displayWeight(fromKilograms: entry.weightKg)
+                    .formatted(.number.precision(.fractionLength(0...1))),
+                isPlaceholder: entry.weightKg <= 0,
+                action: onEditWeight
+            )
+            .accessibilityLabel("Weight, \(settings.formattedWeight(fromKilograms: entry.weightKg))")
 
             Text("x")
                 .font(.caption)
                 .foregroundStyle(.tertiary)
 
-            TextField("0", value: $entry.reps, format: .number)
-                .keyboardType(.numberPad)
-                .multilineTextAlignment(.center)
-                .font(.callout)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 4)
-                .background(.background.secondary, in: .rect(cornerRadius: 7))
+            valueBox(
+                "\(entry.reps)",
+                isPlaceholder: entry.reps <= 0,
+                action: onEditReps
+            )
+            .accessibilityLabel("Reps, \(entry.reps)")
 
             timingControl
         }
         .opacity(entry.isDone ? 0.6 : 1)
         .listRowBackground(isTiming ? Color.accentColor.opacity(0.08) : nil)
+    }
+
+    private func valueBox(
+        _ text: String,
+        isPlaceholder: Bool,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Text(isPlaceholder ? "--" : text)
+                .font(.callout)
+                .foregroundStyle(isPlaceholder ? .tertiary : .primary)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 4)
+                .background(.background.secondary, in: .rect(cornerRadius: 7))
+        }
+        .buttonStyle(.plain)
     }
 
     private var setBadge: some View {
