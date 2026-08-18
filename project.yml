@@ -76,6 +76,7 @@ targets:
       # Shared with the iOS app. Individual files, not folders, so each
       # platform keeps its own views while models and services stay single-source.
       - path: Vitals/Core/Haptics.swift
+      - path: Vitals/Core/Sync/WorkoutSyncModels.swift
       - path: Vitals/Core/Health/VitalKind.swift
       - path: Vitals/Core/Health/VitalReading.swift
       - path: Vitals/Core/Health/HealthKitService.swift

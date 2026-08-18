@@ -23,28 +23,74 @@ final class WatchWorkoutManager: NSObject {
 
     private(set) var isRunning = false
     private(set) var startDate: Date?
+    private(set) var workoutTitle = ""
 
     /// Live metrics from the workout builder.
     private(set) var heartRate: Double = 0
     private(set) var activeEnergy: Double = 0
 
+    /// One performed set, born from the template plan and edited in place.
+    struct PerformedSet: Identifiable {
+        let id = UUID()
+        let exerciseName: String
+        let muscleGroupRaw: String
+        let exerciseOrder: Int
+        let setNumber: Int
+        var weightKg: Double
+        var reps: Int
+        var durationSeconds: Double = 0
+        var isDone = false
+        let restSeconds: Int
+    }
+
+    /// Every set of the session, in plan order.
+    private(set) var sets: [PerformedSet] = []
+    /// Index of the set currently up (next to do, or being done).
+    private(set) var currentIndex = 0
+
     /// Set/rest dial, same phases as the phone.
     enum Phase: Equatable { case idle, set, rest, overtime }
     private(set) var phase: Phase = .idle
-    private(set) var setCount = 0
     private(set) var setElapsed = 0
     private(set) var restRemaining = 0
     private(set) var restTotal = 0
     private(set) var overtimeSeconds = 0
-
-    /// Rest applied after each set. Adjustable from the controls page.
-    var restSeconds = 90
 
     var errorMessage: String?
 
     private var setAnchor: Date?
     private var restEndsAt: Date?
     private var tickTask: Task<Void, Never>?
+
+    // MARK: - Derived session state
+
+    var currentSet: PerformedSet? {
+        sets.indices.contains(currentIndex) ? sets[currentIndex] : nil
+    }
+
+    var doneCount: Int { sets.filter(\.isDone).count }
+
+    var totalVolumeKg: Double {
+        sets.filter(\.isDone).reduce(0) { $0 + $1.weightKg * Double($1.reps) }
+    }
+
+    var totalSetSeconds: Double {
+        sets.reduce(0) { $0 + $1.durationSeconds }
+    }
+
+    var allDone: Bool { !sets.isEmpty && sets.allSatisfy(\.isDone) }
+
+    /// The sets belonging to the current exercise, for the position bar.
+    var currentExerciseSets: [PerformedSet] {
+        guard let current = currentSet else { return [] }
+        return sets.filter { $0.exerciseName == current.exerciseName }
+    }
+
+    func updateSet(id: UUID, weightKg: Double? = nil, reps: Int? = nil) {
+        guard let index = sets.firstIndex(where: { $0.id == id }) else { return }
+        if let weightKg { sets[index].weightKg = weightKg }
+        if let reps { sets[index].reps = reps }
+    }
 
     private override init() {
         super.init()
@@ -92,7 +138,7 @@ final class WatchWorkoutManager: NSObject {
     var dialCaption: String {
         switch phase {
         case .idle: "Ready"
-        case .set: "Set \(setCount + 1)"
+        case .set: "In set"
         case .rest: "Rest"
         case .overtime: "Over"
         }
@@ -118,9 +164,33 @@ final class WatchWorkoutManager: NSObject {
         try? await healthStore.requestAuthorization(toShare: share, read: read)
     }
 
-    func startWorkout() async {
+    /// Starts a session from one of the phone's synced templates. There is no
+    /// blank-workout path on purpose: plans are made on the phone.
+    func startWorkout(template: SyncTemplate) async {
         guard !isRunning else { return }
         errorMessage = nil
+
+        // Flatten the plan into the session's set list, in order.
+        var flattened: [PerformedSet] = []
+        for (order, item) in template.items.enumerated() {
+            for planSet in item.sets.sorted(by: { $0.setNumber < $1.setNumber }) {
+                flattened.append(
+                    PerformedSet(
+                        exerciseName: item.exerciseName,
+                        muscleGroupRaw: item.muscleGroupRaw,
+                        exerciseOrder: order,
+                        setNumber: planSet.setNumber,
+                        weightKg: planSet.weightKg,
+                        reps: planSet.reps,
+                        restSeconds: item.restSeconds
+                    )
+                )
+            }
+        }
+        guard !flattened.isEmpty else {
+            errorMessage = "This workout has no sets. Add some on your iPhone."
+            return
+        }
 
         let configuration = HKWorkoutConfiguration()
         configuration.activityType = .traditionalStrengthTraining
@@ -146,9 +216,11 @@ final class WatchWorkoutManager: NSObject {
             session.startActivity(with: start)
             try await builder.beginCollection(at: start)
 
+            workoutTitle = template.name
+            sets = flattened
+            currentIndex = 0
             startDate = start
             isRunning = true
-            setCount = 0
             phase = .idle
         } catch {
             errorMessage = "Couldn't start the workout: \(error.localizedDescription)"
@@ -160,6 +232,7 @@ final class WatchWorkoutManager: NSObject {
         goIdle()
         stopTicking()
 
+        let start = startDate ?? .now
         let end = Date.now
         session.end()
         do {
@@ -169,18 +242,45 @@ final class WatchWorkoutManager: NSObject {
             errorMessage = "Saving to Health failed: \(error.localizedDescription)"
         }
 
+        // Ship the performed sets back to the phone: history, progress charts
+        // and plan write-back all happen there.
+        let performed = sets.filter { $0.isDone && ($0.weightKg > 0 || $0.reps > 0) }
+        if !performed.isEmpty {
+            let finished = SyncFinishedWorkout(
+                title: workoutTitle,
+                startedAt: start,
+                endedAt: end,
+                sets: performed.map {
+                    SyncPerformedSet(
+                        exerciseName: $0.exerciseName,
+                        muscleGroupRaw: $0.muscleGroupRaw,
+                        exerciseOrder: $0.exerciseOrder,
+                        setNumber: $0.setNumber,
+                        weightKg: $0.weightKg,
+                        reps: $0.reps,
+                        durationSeconds: $0.durationSeconds,
+                        restSeconds: $0.restSeconds
+                    )
+                }
+            )
+            WatchSyncService.shared.sendFinishedWorkout(finished)
+        }
+
         self.session = nil
         self.builder = nil
         isRunning = false
         startDate = nil
+        workoutTitle = ""
         heartRate = 0
         activeEnergy = 0
-        setCount = 0
+        sets = []
+        currentIndex = 0
     }
 
     // MARK: - Set flow
 
     func startSet() {
+        guard currentSet != nil else { return }
         setAnchor = .now
         restEndsAt = nil
         setElapsed = 0
@@ -192,12 +292,22 @@ final class WatchWorkoutManager: NSObject {
     }
 
     func endSet() {
-        guard phase == .set else { return }
-        setCount += 1
+        guard phase == .set, let index = sets.indices.contains(currentIndex)
+            ? currentIndex : nil else { return }
+
+        if let anchor = setAnchor {
+            sets[index].durationSeconds = Date.now.timeIntervalSince(anchor)
+        }
+        sets[index].isDone = true
+        let restSeconds = sets[index].restSeconds
         setAnchor = nil
         Haptics.stageComplete()
 
-        if restSeconds > 0 {
+        advanceToNextUndone()
+
+        if allDone {
+            goIdle()
+        } else if restSeconds > 0 {
             restTotal = restSeconds
             restRemaining = restSeconds
             restEndsAt = Date.now.addingTimeInterval(TimeInterval(restSeconds))
@@ -205,6 +315,14 @@ final class WatchWorkoutManager: NSObject {
             startTicking()
         } else {
             goIdle()
+        }
+    }
+
+    private func advanceToNextUndone() {
+        if let next = sets.indices.first(where: { $0 > currentIndex && !sets[$0].isDone }) {
+            currentIndex = next
+        } else if let anyUndone = sets.indices.first(where: { !sets[$0].isDone }) {
+            currentIndex = anyUndone
         }
     }
 

@@ -269,6 +269,7 @@ struct FitnessHomeView: View {
         context.delete(template)
         renumberTemplates()
         try? context.save()
+        PhoneSyncService.shared.pushTemplates(settings: settings)
     }
 
     private func moveTemplates(from source: IndexSet, to destination: Int) {
@@ -278,6 +279,7 @@ struct FitnessHomeView: View {
             template.sortOrder = index
         }
         try? context.save()
+        PhoneSyncService.shared.pushTemplates(settings: settings)
     }
 
     private func renumberTemplates() {

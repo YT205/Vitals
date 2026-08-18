@@ -14,8 +14,10 @@ struct VitalsWatchApp: App {
     }
 }
 
-/// Vertical page navigation: crown or swipe between the four areas.
+/// Horizontal page navigation: swipe right-to-left between the four areas.
 struct WatchRootView: View {
+    @Environment(AppSettings.self) private var settings
+
     var body: some View {
         TabView {
             WatchWorkoutView()
@@ -23,8 +25,9 @@ struct WatchRootView: View {
             WatchRecoveryView()
             WatchWaterView()
         }
-        .tabViewStyle(.verticalPage)
+        .tabViewStyle(.page)
         .task {
+            WatchSyncService.shared.activate(settings: settings)
             await WatchWorkoutManager.shared.requestAuthorization()
             try? await HealthKitService.shared.requestAuthorization()
         }

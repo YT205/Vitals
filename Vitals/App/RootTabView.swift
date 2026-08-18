@@ -22,6 +22,9 @@ struct RootTabView: View {
             }
         }
         .task {
+            // Watch sync: activate the session and push the current library.
+            PhoneSyncService.shared.activate()
+
             // Ask once per launch. HealthKit itself only shows the sheet the
             // first time, so this is cheap to call.
             guard !didRequestAuthorization else { return }

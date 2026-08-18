@@ -353,6 +353,8 @@ struct TemplateEditorView: View {
         }
         renumber()
         try? context.save()
+        // Keep the watch's copy of the library current.
+        PhoneSyncService.shared.pushTemplates(settings: settings)
         dismiss()
     }
 
