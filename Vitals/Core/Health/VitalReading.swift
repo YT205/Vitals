@@ -36,6 +36,57 @@ struct VitalReading: Identifiable, Sendable, Equatable {
     }
 }
 
+/// A vital's usual range, learned from its own last 30 days in HealthKit.
+/// Mean plus/minus one standard deviation; needs at least 5 days of data.
+struct VitalBaseline: Sendable, Equatable {
+    let mean: Double
+    let stdDev: Double
+    let sampleCount: Int
+
+    static func compute(from values: [Double]) -> VitalBaseline? {
+        guard values.count >= 5 else { return nil }
+        let mean = values.reduce(0, +) / Double(values.count)
+        let variance = values.reduce(0) { $0 + ($1 - mean) * ($1 - mean) }
+            / Double(values.count)
+        let stdDev = variance.squareRoot()
+        guard stdDev.isFinite, stdDev > 0 else { return nil }
+        return VitalBaseline(mean: mean, stdDev: stdDev, sampleCount: values.count)
+    }
+
+    var range: ClosedRange<Double> { (mean - stdDev)...(mean + stdDev) }
+
+    func status(for value: Double) -> VitalStatus {
+        if value > mean + stdDev { return .aboveUsual }
+        if value < mean - stdDev { return .belowUsual }
+        return .typical
+    }
+}
+
+/// Where today's reading sits against the personal baseline. Deliberately
+/// neutral wording: "above usual" is not "bad" -- high HRV is good, high
+/// resting HR usually isn't. The app reports direction; you know the metric.
+enum VitalStatus: Sendable, Equatable {
+    case aboveUsual
+    case belowUsual
+    case typical
+
+    var label: String {
+        switch self {
+        case .aboveUsual: "Above usual"
+        case .belowUsual: "Below usual"
+        case .typical: "Usual range"
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .aboveUsual: "arrow.up.right"
+        case .belowUsual: "arrow.down.right"
+        case .typical: "checkmark"
+        }
+    }
+}
+
 /// Summary of last night's sleep, assembled from `HKCategoryTypeIdentifier.sleepAnalysis`.
 struct SleepSummary: Sendable, Equatable {
     var inBed: TimeInterval = 0

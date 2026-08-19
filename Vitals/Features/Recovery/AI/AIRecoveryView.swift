@@ -24,7 +24,7 @@ struct AIRecoveryView: View {
     // Generation
     @State private var isGenerating = false
     @State private var generated: RecoveryRoutine?
-    @State private var usedFallback = false
+    @State private var fallbackNote: String?
     @State private var errorMessage: String?
 
     /// The last few workouts are the realistic candidates.
@@ -186,8 +186,8 @@ struct AIRecoveryView: View {
                 .foregroundStyle(.tertiary)
             }
         } footer: {
-            if usedFallback {
-                Text("Apple Intelligence wasn't available, so this came from the built-in bank.")
+            if let fallbackNote {
+                Text(fallbackNote)
             }
         }
 
@@ -230,8 +230,12 @@ struct AIRecoveryView: View {
             }
             .disabled(isGenerating)
 
-            Button("Start Over", role: .destructive) {
+            Button(role: .destructive) {
                 generated = nil
+                fallbackNote = nil
+            } label: {
+                Text("Start Over")
+                    .frame(maxWidth: .infinity)
             }
         }
     }
@@ -262,7 +266,7 @@ struct AIRecoveryView: View {
                     kind: kind
                 )
                 generated = result.routine
-                usedFallback = result.usedFallback
+                fallbackNote = result.fallbackNote
             } catch {
                 errorMessage = "Generation failed: \(error.localizedDescription)"
             }

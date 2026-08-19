@@ -53,7 +53,8 @@ struct HealthDashboardView: View {
                                         } label: {
                                             VitalCard(
                                                 kind: kind,
-                                                reading: model.reading(for: kind)
+                                                reading: model.reading(for: kind),
+                                                status: model.status(for: kind)
                                             )
                                         }
                                         .buttonStyle(.plain)

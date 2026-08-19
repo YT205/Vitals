@@ -8,6 +8,16 @@ struct VitalCard: View {
 
     let kind: VitalKind
     let reading: VitalReading?
+    /// Today vs the personal 30-day baseline; nil while learning or for sums.
+    var status: VitalStatus?
+
+    private func statusTint(_ status: VitalStatus) -> Color {
+        switch status {
+        case .aboveUsual: .orange
+        case .belowUsual: .teal
+        case .typical: .green
+        }
+    }
 
     /// Weight-based vitals convert kg to the user's unit; everything else uses
     /// the reading's own formatting.
@@ -48,9 +58,19 @@ struct VitalCard: View {
                         }
                     }
 
-                    Text(reading.formattedTimestamp ?? "Today")
-                        .font(.caption2)
-                        .foregroundStyle(.tertiary)
+                    if let status {
+                        HStack(spacing: 3) {
+                            Image(systemName: status.systemImage)
+                                .font(.system(size: 8, weight: .bold))
+                            Text(status.label)
+                                .font(.caption2)
+                        }
+                        .foregroundStyle(statusTint(status))
+                    } else {
+                        Text(reading.formattedTimestamp ?? "Today")
+                            .font(.caption2)
+                            .foregroundStyle(.tertiary)
+                    }
                 } else {
                     Text("--")
                         .font(.title2.weight(.semibold))

@@ -172,16 +172,38 @@ struct VitalDetailView: View {
         }
     }
 
+    /// Personal usual range from the visible history, excluding today.
+    private var usualRange: ClosedRange<Double>? {
+        guard kind.aggregation == .mostRecent else { return nil }
+        let startOfToday = Calendar.current.startOfDay(for: .now)
+        let past = displayPoints.filter { $0.date < startOfToday }.map(\.value)
+        return VitalBaseline.compute(from: past)?.range
+    }
+
     private var statsCard: some View {
         Card {
-            HStack(alignment: .top) {
-                StatBlock(
-                    value: format(values.reduce(0, +) / Double(values.count)),
-                    caption: "Average",
-                    tint: kind.tint
-                )
-                StatBlock(value: format(values.min() ?? 0), caption: "Low")
-                StatBlock(value: format(values.max() ?? 0), caption: "High")
+            VStack(spacing: 12) {
+                HStack(alignment: .top) {
+                    StatBlock(
+                        value: format(values.reduce(0, +) / Double(values.count)),
+                        caption: "Average",
+                        tint: kind.tint
+                    )
+                    StatBlock(value: format(values.min() ?? 0), caption: "Low")
+                    StatBlock(value: format(values.max() ?? 0), caption: "High")
+                }
+
+                if let usualRange {
+                    Divider()
+                    HStack {
+                        Text("Your usual range")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                        Text("\(format(usualRange.lowerBound)) – \(format(usualRange.upperBound)) \(unitText)")
+                            .font(.caption.weight(.medium))
+                    }
+                }
             }
         }
     }

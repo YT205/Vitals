@@ -71,8 +71,9 @@ enum RecoveryAIService {
 
     struct Result {
         let routine: RecoveryRoutine
-        /// `true` when the rule-based bank produced it (model unavailable).
-        let usedFallback: Bool
+        /// Set when the rule-based bank produced the routine instead of the
+        /// model, with the reason (unavailable, or output rejected).
+        let fallbackNote: String?
     }
 
     /// Generates a routine for a workout description and the user's goals.
@@ -90,47 +91,86 @@ enum RecoveryAIService {
         goals: String,
         kind: RecoveryKind
     ) async throws -> Result {
-        guard case .available = availability() else {
+        if case .unavailable(let reason) = availability() {
             return Result(
                 routine: fallbackRoutine(muscleGroups: muscleGroups, kind: kind),
-                usedFallback: true
+                fallbackNote: reason + " A routine from the built-in bank was created instead."
             )
         }
 
-        let session = LanguageModelSession(instructions: instructions(for: kind))
+        let session = LanguageModelSession(
+            instructions: instructions(for: kind, muscleGroups: muscleGroups)
+        )
         let prompt = buildPrompt(
             workoutSummary: workoutSummary,
             goals: goals,
             kind: kind
         )
 
+        // Low temperature on purpose: recovery plans should be conventional,
+        // not creative. Default sampling was drifting into strength exercises.
         let response = try await session.respond(
             to: prompt,
-            generating: AIGeneratedRoutine.self
+            generating: AIGeneratedRoutine.self,
+            options: GenerationOptions(temperature: 0.3)
         )
 
         let routine = sanitized(response.content, kind: kind, muscleGroups: muscleGroups)
-        return Result(routine: routine, usedFallback: false)
+
+        // Quality gate: if rejection filtering left too little routine, the
+        // model output wasn't usable -- hand over to the bank rather than
+        // shipping a two-step plan.
+        guard routine.steps.count >= 3 else {
+            return Result(
+                routine: fallbackRoutine(muscleGroups: muscleGroups, kind: kind),
+                fallbackNote: "The generated plan didn't pass validation, so a routine from the built-in bank was created instead. Try regenerating with more specific goals."
+            )
+        }
+
+        return Result(routine: routine, fallbackNote: nil)
     }
 
     // MARK: - Prompting
 
-    private static func instructions(for kind: RecoveryKind) -> String {
+    private static func instructions(
+        for kind: RecoveryKind,
+        muscleGroups: [MuscleGroup]
+    ) -> String {
         let modality = kind == .massageGun
             ? """
-            You design massage gun recovery sequences. Safety rules that must \
-            never be violated: never target the neck, throat, spine, abdomen, \
-            armpits, or any bone or joint. Only name large muscle bellies. \
-            Recommend light to medium pressure.
+            You design massage gun recovery sequences. Every step names ONE \
+            muscle area to run the massage gun over -- like Quads, Hamstrings, \
+            Calves, Glutes, Lats, Upper Traps, Pecs, Forearms. Safety rules \
+            that must never be violated: never target the neck, throat, \
+            spine, abdomen, armpits, or any bone or joint. Recommend light \
+            to medium pressure.
             """
             : """
-            You design post-workout static stretching sequences. Prefer \
-            well-known stretches with common names. Holds are gentle; never \
-            suggest ballistic or painful stretching.
+            You design post-workout static stretching sequences. Every step \
+            is a STRETCH with its common name -- like Couch Stretch, Pigeon \
+            Pose, Doorway Chest Stretch, Standing Quad Stretch. Holds are \
+            gentle; never suggest ballistic or painful stretching.
             """
 
+        // Anchor the model with the vocabulary it should sound like: the
+        // curated bank entries for the muscle groups in play.
+        let groups = muscleGroups.isEmpty ? MuscleGroup.allCases : muscleGroups
+        let bankNames = groups
+            .flatMap {
+                kind == .massageGun
+                    ? RecoveryLibrary.massageSteps(for: $0)
+                    : RecoveryLibrary.stretchSteps(for: $0)
+            }
+            .map(\.0)
+        let vocabulary = Array(Set(bankNames)).sorted().prefix(24)
+
         return modality + """
-         Order steps so adjacent steps flow into each other (standing \
+         This is RECOVERY, not training: never output strength or cardio \
+        exercises. No squats, presses, curls, rows, deadlifts, raises, \
+        lunges, planks, or anything performed with weights or for reps. \
+        Good step names sound like these: \
+        \(vocabulary.joined(separator: ", ")). \
+        Order steps so adjacent steps flow into each other (standing \
         together, floor together). Mark a step per-side only when it \
         genuinely works one side at a time. Keep instructions to one short \
         cue each. Target muscles must be chosen from: \
@@ -156,8 +196,34 @@ enum RecoveryAIService {
 
     // MARK: - Validation
 
+    /// Words that mark a step as a training exercise, not recovery. Whole-word
+    /// matched so "Couch Stretch" survives while "Chest Press" is rejected.
+    private static let exerciseMarkers: Set<String> = [
+        "press", "curl", "row", "squat", "deadlift", "raise", "lunge",
+        "thrust", "pulldown", "pushdown", "pullup", "pull-up", "pushup",
+        "push-up", "dip", "shrug", "snatch", "clean", "jerk", "crunch",
+        "situp", "sit-up", "plank", "burpee", "kickback", "fly", "extension",
+        "swing", "carry", "rep", "reps", "sets",
+    ]
+
+    /// `true` when a generated step reads like a lift: matches the exercise
+    /// library by name or contains a training keyword.
+    private static func looksLikeExercise(_ name: String) -> Bool {
+        let lowered = name.lowercased()
+        let words = Set(
+            lowered.components(separatedBy: CharacterSet.alphanumerics.inverted)
+                .filter { !$0.isEmpty }
+        )
+        if !words.isDisjoint(with: exerciseMarkers) { return true }
+
+        // Exact library-name matches catch multi-word names without markers.
+        return ExerciseLibrary.definitions.contains { definition in
+            definition.0.lowercased() == lowered
+        }
+    }
+
     /// Model output crosses a trust boundary: clamp durations, cap counts,
-    /// drop empty steps, and map muscle names leniently.
+    /// drop empty or exercise-like steps, and map muscle names leniently.
     private static func sanitized(
         _ generated: AIGeneratedRoutine,
         kind: RecoveryKind,
@@ -178,6 +244,7 @@ enum RecoveryAIService {
 
         let steps = generated.steps
             .filter { !$0.name.trimmingCharacters(in: .whitespaces).isEmpty }
+            .filter { !looksLikeExercise($0.name) }
             .prefix(15)
 
         routine.steps = steps.enumerated().map { index, step in

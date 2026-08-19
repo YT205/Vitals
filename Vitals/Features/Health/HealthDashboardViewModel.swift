@@ -8,6 +8,8 @@ final class HealthDashboardViewModel {
 
     var readings: [VitalKind: VitalReading] = [:]
     var sleep: SleepSummary?
+    /// Personal usual ranges, learned from each vital's last 30 days.
+    var baselines: [VitalKind: VitalBaseline] = [:]
     var isLoading = false
     var errorMessage: String?
     var lastRefreshed: Date?
@@ -30,6 +32,16 @@ final class HealthDashboardViewModel {
 
     func reading(for kind: VitalKind) -> VitalReading? {
         readings[kind]
+    }
+
+    /// Today's reading vs the personal baseline. Only for latest-value
+    /// vitals: a mid-day partial sum of steps would always read "below
+    /// usual" against full-day baselines, which is noise, not signal.
+    func status(for kind: VitalKind) -> VitalStatus? {
+        guard kind.aggregation == .mostRecent,
+              let baseline = baselines[kind],
+              let reading = readings[kind] else { return nil }
+        return baseline.status(for: reading.value)
     }
 
     func refresh() async {
@@ -56,5 +68,29 @@ final class HealthDashboardViewModel {
 
         lastRefreshed = .now
         isLoading = false
+
+        // Baselines load after the cards are already showing values; badges
+        // fill in as each history query lands.
+        await loadBaselines()
+    }
+
+    /// Learns each latest-value vital's usual range from its past 30 days,
+    /// excluding today (today is the value being judged).
+    private func loadBaselines() async {
+        let startOfToday = Calendar.current.startOfDay(for: .now)
+        var result: [VitalKind: VitalBaseline] = [:]
+
+        for kind in VitalKind.allCases
+        where kind.aggregation == .mostRecent && readings[kind] != nil {
+            let history = (try? await health.dailyHistory(for: kind, days: 30)) ?? []
+            let pastValues = history
+                .filter { $0.date < startOfToday }
+                .map(\.value)
+            if let baseline = VitalBaseline.compute(from: pastValues) {
+                result[kind] = baseline
+            }
+        }
+
+        baselines = result
     }
 }
