@@ -89,28 +89,10 @@ struct ActiveWorkoutView: View {
                                     }
                                 },
                                 onEditWeight: {
-                                    padTarget = NumberPadTarget(
-                                        title: "\(entry.exerciseName) · Set \(entry.setNumber)",
-                                        unit: settings.weightUnit.label,
-                                        allowsDecimal: true,
-                                        initialValue: settings.displayWeight(
-                                            fromKilograms: entry.weightKg
-                                        )
-                                    ) { value in
-                                        entry.weightKg = settings.kilograms(
-                                            fromDisplayWeight: value
-                                        )
-                                    }
+                                    padTarget = makePadTarget(for: entry, field: .weight)
                                 },
                                 onEditReps: {
-                                    padTarget = NumberPadTarget(
-                                        title: "\(entry.exerciseName) · Set \(entry.setNumber)",
-                                        unit: "reps",
-                                        allowsDecimal: false,
-                                        initialValue: Double(entry.reps)
-                                    ) { value in
-                                        entry.reps = Int(value)
-                                    }
+                                    padTarget = makePadTarget(for: entry, field: .reps)
                                 }
                             )
                             .swipeActions(edge: .trailing) {
@@ -247,7 +229,9 @@ struct ActiveWorkoutView: View {
                 }
             }
         }
-        .padding(.horizontal)
+        // 20pt matches the insetGrouped list margin so this card lines up
+        // flush with the exercise tables below.
+        .padding(.horizontal, 20)
         .padding(.top, 8)
     }
 
@@ -291,7 +275,7 @@ struct ActiveWorkoutView: View {
                 }
             }
         }
-        .padding(.horizontal)
+        .padding(.horizontal, 20)
     }
 
     // MARK: - Collapsed exercises
@@ -359,6 +343,59 @@ struct ActiveWorkoutView: View {
             from: nil,
             for: nil
         )
+    }
+
+    // MARK: - Number pad chaining
+
+    private enum PadField { case weight, reps }
+
+    /// One editable cell, wired so Next walks weight -> reps -> next set,
+    /// crossing into the next exercise, and Copy Down fills the remaining
+    /// sets of the same exercise.
+    private func makePadTarget(for entry: SetEntry, field: PadField) -> NumberPadTarget {
+        NumberPadTarget(
+            title: "\(entry.exerciseName) · Set \(entry.setNumber)",
+            unit: field == .weight ? settings.weightUnit.label : "reps",
+            allowsDecimal: field == .weight,
+            initialValue: field == .weight
+                ? settings.displayWeight(fromKilograms: entry.weightKg)
+                : Double(entry.reps),
+            step: field == .weight ? 0.5 : 1,
+            onCommit: { value in
+                apply(value, to: entry, field: field)
+            },
+            onCopyDown: { value in
+                apply(value, to: entry, field: field)
+                for follower in session.orderedSets
+                where follower.exerciseName == entry.exerciseName
+                    && follower.setNumber > entry.setNumber {
+                    apply(value, to: follower, field: field)
+                }
+            },
+            next: {
+                nextPadTarget(after: entry, field: field)
+            }
+        )
+    }
+
+    private func apply(_ value: Double, to entry: SetEntry, field: PadField) {
+        switch field {
+        case .weight:
+            entry.weightKg = settings.kilograms(fromDisplayWeight: value)
+        case .reps:
+            entry.reps = max(0, Int(value))
+        }
+    }
+
+    private func nextPadTarget(after entry: SetEntry, field: PadField) -> NumberPadTarget? {
+        if field == .weight {
+            return makePadTarget(for: entry, field: .reps)
+        }
+        let ordered = session.orderedSets
+        guard let index = ordered.firstIndex(where: {
+            $0.persistentModelID == entry.persistentModelID
+        }), index + 1 < ordered.count else { return nil }
+        return makePadTarget(for: ordered[index + 1], field: .weight)
     }
 }
 

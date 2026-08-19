@@ -75,33 +75,13 @@ struct RecoveryHomeView: View {
     var body: some View {
         NavigationStack {
             List {
-                Section {
-                    Button {
-                        showingAI = true
-                    } label: {
-                        HStack(spacing: 10) {
-                            Image(systemName: "sparkles")
-                                .font(.title3)
-                                .foregroundStyle(.tint)
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text("AI Recovery Assistant")
-                                    .font(.body.weight(.medium))
-                                    .foregroundStyle(.primary)
-                                Text("Build a stretch or massage plan from a workout and your goals")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                            }
-                        }
-                    }
-                }
-
                 if routines.isEmpty {
                     EmptyStateView(
                         systemImage: "figure.cooldown",
                         title: "No routines yet",
-                        message: "Generate one with the assistant above, or build one by hand with the + button.",
-                        actionTitle: "New Routine",
-                        action: createRoutine
+                        message: "Tap + to generate one with AI or build one by hand.",
+                        actionTitle: "AI Recovery Assistant",
+                        action: { showingAI = true }
                     )
                     .listRowBackground(Color.clear)
                 } else {
@@ -156,12 +136,21 @@ struct RecoveryHomeView: View {
                     }
                 }
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button {
-                        createRoutine()
+                    Menu {
+                        Button {
+                            showingAI = true
+                        } label: {
+                            Label("AI Recovery Assistant", systemImage: "sparkles")
+                        }
+                        Button {
+                            createRoutine()
+                        } label: {
+                            Label("New Routine", systemImage: "pencil")
+                        }
                     } label: {
                         Image(systemName: "plus")
                     }
-                    .accessibilityLabel("New routine")
+                    .accessibilityLabel("Add routine")
                 }
             }
             .sheet(item: $editingRoutine) { routine in

@@ -65,6 +65,10 @@ struct SetRowView: View {
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 4)
                 .background(.background.secondary, in: .rect(cornerRadius: 7))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 7)
+                        .strokeBorder(Color.accentColor.opacity(0.35), lineWidth: 1)
+                )
         }
         .buttonStyle(.plain)
     }

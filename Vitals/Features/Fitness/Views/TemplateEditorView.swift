@@ -112,10 +112,32 @@ struct TemplateEditorView: View {
     @ViewBuilder
     private func exerciseSection(_ item: TemplateItem) -> some View {
         Section {
-            PlanSetHeaderRow()
+            // Column titles, with the exercise's rest picker beside REPS.
+            HStack(spacing: 10) {
+                Text("Set")
+                    .frame(width: 24)
+                Text(settings.weightUnit.label.uppercased())
+                    .frame(maxWidth: .infinity)
+                Text("")
+                    .font(.caption)
+                Text("REPS")
+                    .frame(maxWidth: .infinity)
+
+                Menu {
+                    ForEach(Array(stride(from: 15, through: 300, by: 15)), id: \.self) { seconds in
+                        Button("\(seconds)s") { item.restSeconds = seconds }
+                    }
+                } label: {
+                    Label("\(item.restSeconds)s", systemImage: "timer")
+                        .font(.caption2)
+                }
+                .accessibilityLabel("Rest between sets, \(item.restSeconds) seconds")
+            }
+            .font(.caption2.weight(.semibold))
+            .foregroundStyle(.tertiary)
 
             ForEach(item.orderedSets) { planSet in
-                planSetRow(planSet, itemName: item.exerciseName)
+                planSetRow(planSet, item: item)
                     .swipeActions(edge: .trailing) {
                         Button(role: .destructive) {
                             deleteSet(planSet, from: item)
@@ -131,17 +153,6 @@ struct TemplateEditorView: View {
                 Label("Add Set", systemImage: "plus")
                     .font(.subheadline)
             }
-
-            Picker("Rest between sets", selection: Binding(
-                get: { item.restSeconds },
-                set: { item.restSeconds = $0 }
-            )) {
-                ForEach(Array(stride(from: 15, through: 300, by: 15)), id: \.self) { seconds in
-                    Text("\(seconds)s").tag(seconds)
-                }
-            }
-            .pickerStyle(.menu)
-            .font(.subheadline)
         } header: {
             HStack {
                 Text(item.exerciseName)
@@ -187,7 +198,7 @@ struct TemplateEditorView: View {
         }
     }
 
-    private func planSetRow(_ planSet: TemplateSet, itemName: String) -> some View {
+    private func planSetRow(_ planSet: TemplateSet, item: TemplateItem) -> some View {
         HStack(spacing: 10) {
             Text("\(planSet.setNumber)")
                 .font(.caption.weight(.semibold))
@@ -200,14 +211,7 @@ struct TemplateEditorView: View {
                     .formatted(.number.precision(.fractionLength(0...1))),
                 isPlaceholder: planSet.weightKg <= 0
             ) {
-                padTarget = NumberPadTarget(
-                    title: "\(itemName) · Set \(planSet.setNumber)",
-                    unit: settings.weightUnit.label,
-                    allowsDecimal: true,
-                    initialValue: settings.displayWeight(fromKilograms: planSet.weightKg)
-                ) { value in
-                    planSet.weightKg = settings.kilograms(fromDisplayWeight: value)
-                }
+                padTarget = makePadTarget(for: planSet, in: item, field: .weight)
             }
 
             Text("x")
@@ -215,14 +219,7 @@ struct TemplateEditorView: View {
                 .foregroundStyle(.tertiary)
 
             planValueBox("\(planSet.reps)", isPlaceholder: planSet.reps <= 0) {
-                padTarget = NumberPadTarget(
-                    title: "\(itemName) · Set \(planSet.setNumber)",
-                    unit: "reps",
-                    allowsDecimal: false,
-                    initialValue: Double(planSet.reps)
-                ) { value in
-                    planSet.reps = Int(value)
-                }
+                padTarget = makePadTarget(for: planSet, in: item, field: .reps)
             }
         }
     }
@@ -240,8 +237,83 @@ struct TemplateEditorView: View {
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 4)
                 .background(.background.secondary, in: .rect(cornerRadius: 7))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 7)
+                        .strokeBorder(Color.accentColor.opacity(0.35), lineWidth: 1)
+                )
         }
         .buttonStyle(.plain)
+    }
+
+    // MARK: - Number pad chaining
+
+    private enum PadField { case weight, reps }
+
+    /// One editable cell, wired so Next walks weight -> reps -> next set,
+    /// crossing into the next exercise at the end, and Copy Down fills the
+    /// rest of this exercise's sets.
+    private func makePadTarget(
+        for planSet: TemplateSet,
+        in item: TemplateItem,
+        field: PadField
+    ) -> NumberPadTarget {
+        NumberPadTarget(
+            title: "\(item.exerciseName) · Set \(planSet.setNumber)",
+            unit: field == .weight ? settings.weightUnit.label : "reps",
+            allowsDecimal: field == .weight,
+            initialValue: field == .weight
+                ? settings.displayWeight(fromKilograms: planSet.weightKg)
+                : Double(planSet.reps),
+            step: field == .weight ? 0.5 : 1,
+            onCommit: { value in
+                apply(value, to: planSet, field: field)
+            },
+            onCopyDown: { value in
+                apply(value, to: planSet, field: field)
+                for follower in item.orderedSets
+                where follower.setNumber > planSet.setNumber {
+                    apply(value, to: follower, field: field)
+                }
+            },
+            next: {
+                nextPadTarget(after: planSet, in: item, field: field)
+            }
+        )
+    }
+
+    private func apply(_ value: Double, to planSet: TemplateSet, field: PadField) {
+        switch field {
+        case .weight:
+            planSet.weightKg = settings.kilograms(fromDisplayWeight: value)
+        case .reps:
+            planSet.reps = max(0, Int(value))
+        }
+    }
+
+    private func nextPadTarget(
+        after planSet: TemplateSet,
+        in item: TemplateItem,
+        field: PadField
+    ) -> NumberPadTarget? {
+        // Weight hands off to reps of the same set.
+        if field == .weight {
+            return makePadTarget(for: planSet, in: item, field: .reps)
+        }
+        // Reps hands off to the next set's weight...
+        let sets = item.orderedSets
+        if let index = sets.firstIndex(where: { $0 === planSet }), index + 1 < sets.count {
+            return makePadTarget(for: sets[index + 1], in: item, field: .weight)
+        }
+        // ...or the first set of the next exercise.
+        let items = template.orderedItems
+        if let itemIndex = items.firstIndex(where: { $0 === item }) {
+            for nextItem in items.dropFirst(itemIndex + 1) {
+                if let first = nextItem.orderedSets.first {
+                    return makePadTarget(for: first, in: nextItem, field: .weight)
+                }
+            }
+        }
+        return nil
     }
 
     // MARK: - Actions
@@ -362,22 +434,4 @@ private struct ReorderExercisesSheet: View {
     }
 }
 
-/// Column titles for the plan rows, matching the live workout header.
-private struct PlanSetHeaderRow: View {
-    @Environment(AppSettings.self) private var settings
 
-    var body: some View {
-        HStack(spacing: 10) {
-            Text("Set")
-                .frame(width: 24)
-            Text(settings.weightUnit.label.uppercased())
-                .frame(maxWidth: .infinity)
-            Text("")
-                .font(.caption)
-            Text("REPS")
-                .frame(maxWidth: .infinity)
-        }
-        .font(.caption2.weight(.semibold))
-        .foregroundStyle(.tertiary)
-    }
-}

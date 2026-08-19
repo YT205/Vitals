@@ -100,7 +100,38 @@ enum VitalsModelContainer {
             backfillRoutineTargets(context)
         }
 
+        if trackVersion {
+            removeDuplicateSessions(context)
+        }
+
         try? context.save()
+    }
+
+    private static let dedupeKey = "cleanup.duplicateSessions.v1"
+
+    /// One-shot: watch sync could ingest the same finished workout twice
+    /// before ingest became idempotent (WCSession re-delivers unacknowledged
+    /// transfers). Removes exact duplicates -- same title, same start time --
+    /// keeping the first of each.
+    private static func removeDuplicateSessions(_ context: ModelContext) {
+        guard UserDefaults.standard.integer(forKey: dedupeKey) < 1 else { return }
+
+        let descriptor = FetchDescriptor<WorkoutSession>(
+            sortBy: [SortDescriptor(\.startedAt)]
+        )
+        guard let sessions = try? context.fetch(descriptor) else { return }
+
+        var seen = Set<String>()
+        for session in sessions {
+            let key = "\(session.title)|\(session.startedAt.timeIntervalSince1970)"
+            if seen.contains(key) {
+                context.delete(session)
+            } else {
+                seen.insert(key)
+            }
+        }
+
+        UserDefaults.standard.set(1, forKey: dedupeKey)
     }
 
     private static let routineTargetsKey = "seed.recoveryTargetsVersion"

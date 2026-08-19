@@ -123,6 +123,18 @@ final class PhoneSyncService: NSObject {
     private func ingest(_ finished: SyncFinishedWorkout) {
         let context = ModelContext(VitalsModelContainer.shared)
 
+        // Idempotency: WCSession re-delivers queued transfers when the app
+        // was killed before acknowledging them (constant during development
+        // rebuilds). Same title + same start time = the same workout.
+        let title = finished.title
+        let start = finished.startedAt
+        let existing = FetchDescriptor<WorkoutSession>(
+            predicate: #Predicate { $0.title == title && $0.startedAt == start }
+        )
+        if let count = try? context.fetchCount(existing), count > 0 {
+            return
+        }
+
         let workout = WorkoutSession(title: finished.title, startedAt: finished.startedAt)
         workout.endedAt = finished.endedAt
         // The watch's HKWorkoutSession already wrote the HealthKit record.
