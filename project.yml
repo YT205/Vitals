@@ -35,6 +35,7 @@ targets:
       - path: Vitals
     dependencies:
       - target: VitalsWatch
+      - target: VitalsWidgets
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.yashst.vitals
@@ -48,6 +49,8 @@ targets:
       path: Vitals/App/Vitals.entitlements
       properties:
         com.apple.developer.healthkit: true
+        com.apple.security.application-groups:
+          - group.com.yashst.vitals
     info:
       path: Vitals/App/Info.plist
       properties:
@@ -114,3 +117,30 @@ targets:
         NSHealthUpdateUsageDescription: >-
           Vitals saves workouts and water you log from the watch to Apple
           Health.
+
+  VitalsWidgets:
+    type: app-extension
+    platform: iOS
+    deploymentTarget: "26.0"
+    sources:
+      - path: VitalsWidgets
+      # The shared store: snapshot + pending-water models and App Group access.
+      - path: Vitals/Core/Widgets/WidgetShared.swift
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.yashst.vitals.widgets
+        PRODUCT_NAME: VitalsWidgets
+        SKIP_INSTALL: YES
+    entitlements:
+      path: VitalsWidgets/VitalsWidgets.entitlements
+      properties:
+        com.apple.security.application-groups:
+          - group.com.yashst.vitals
+    info:
+      path: VitalsWidgets/Info.plist
+      properties:
+        CFBundleDisplayName: Vitals Widgets
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension

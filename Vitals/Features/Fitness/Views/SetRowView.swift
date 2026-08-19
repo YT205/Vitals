@@ -64,11 +64,9 @@ struct SetRowView: View {
                 .multilineTextAlignment(.center)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 4)
-                .background(.background.secondary, in: .rect(cornerRadius: 7))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 7)
-                        .strokeBorder(Color.accentColor.opacity(0.35), lineWidth: 1)
-                )
+                // A slightly lighter grey than the row, so the tappable area
+                // reads as a filled field without an outline.
+                .background(Color(.tertiarySystemFill), in: .rect(cornerRadius: 7))
         }
         .buttonStyle(.plain)
     }

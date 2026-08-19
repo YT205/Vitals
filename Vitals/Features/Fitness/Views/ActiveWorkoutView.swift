@@ -171,7 +171,12 @@ struct ActiveWorkoutView: View {
             }
         }
         .sheet(item: $padTarget) { target in
+            // .id forces fresh sheet state per target. Without it, SwiftUI
+            // reuses the sheet's @State across presentations and the pad
+            // keeps editing the FIRST cell it ever showed -- the "always
+            // says Set 1" / "copy-down does nothing" bug.
             NumberPadSheet(target: target)
+                .id(target.id)
         }
         // Live-ish heart rate for the duration of the workout. The task is
         // cancelled automatically when this screen goes away.

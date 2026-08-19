@@ -86,7 +86,9 @@ struct TemplateEditorView: View {
                 ReorderExercisesSheet(template: template)
             }
             .sheet(item: $padTarget) { target in
+                // Fresh state per target; see ActiveWorkoutView for why.
                 NumberPadSheet(target: target)
+                    .id(target.id)
             }
             .sheet(isPresented: $showingPicker) {
                 ExercisePickerView(
@@ -236,11 +238,7 @@ struct TemplateEditorView: View {
                 .multilineTextAlignment(.center)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 4)
-                .background(.background.secondary, in: .rect(cornerRadius: 7))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 7)
-                        .strokeBorder(Color.accentColor.opacity(0.35), lineWidth: 1)
-                )
+                .background(Color(.tertiarySystemFill), in: .rect(cornerRadius: 7))
         }
         .buttonStyle(.plain)
     }

@@ -20,6 +20,14 @@ struct HealthDashboardView: View {
         model.vitals(in: section).filter { settings.isVisible($0) }
     }
 
+    private func publishWidgetSnapshot() {
+        SnapshotPublisher.publishVitals(
+            readings: model.readings,
+            baselines: model.baselines,
+            settings: settings
+        )
+    }
+
     var body: some View {
         NavigationStack {
             ScrollView {
@@ -79,8 +87,14 @@ struct HealthDashboardView: View {
             }
             .navigationTitle("Health")
             .background(Color(.systemGroupedBackground))
-            .refreshable { await model.refresh() }
-            .task { await model.refresh() }
+            .refreshable {
+                await model.refresh()
+                publishWidgetSnapshot()
+            }
+            .task {
+                await model.refresh()
+                publishWidgetSnapshot()
+            }
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {

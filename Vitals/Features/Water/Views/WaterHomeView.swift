@@ -63,6 +63,13 @@ struct WaterHomeView: View {
                     Task { await model.log(millilitres: millilitres, context: context) }
                 }
             }
+            // Keep the water widget's total current.
+            .task {
+                SnapshotPublisher.publishWater(todayML: todayTotal, settings: settings)
+            }
+            .onChange(of: todayTotal) { _, newTotal in
+                SnapshotPublisher.publishWater(todayML: newTotal, settings: settings)
+            }
         }
     }
 
