@@ -84,6 +84,9 @@ xcodebuild -project Vitals.xcodeproj -scheme Vitals \
 
 1. iPhone: Settings → Privacy & Security → **Developer Mode** → on → reboot.
    Same on the watch (its own Settings app).
+   *Toggle not there?* It stays hidden until the phone has connected to
+   Xcode once: cable in, tap Trust, open Xcode's Devices window (⌘⇧2), and
+   it appears.
 2. Connect the iPhone, select it as the destination for the **Vitals**
    scheme, Run.
 3. First launch is blocked: on the phone, Settings → General →
