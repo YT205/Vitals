@@ -50,8 +50,6 @@ struct SettingsView: View {
                     }
                 } header: {
                     Text("Health Access")
-                } footer: {
-                    Text("Permissions live in Health under Sharing, then Apps & Services. iOS never reports read access back to apps, so if a card shows no data, check there first.")
                 }
 
                 Section {
@@ -73,8 +71,6 @@ struct SettingsView: View {
                     }
                 } header: {
                     Text("Apple Watch Sync")
-                } footer: {
-                    Text("Workouts push automatically when they change. Use the button if the watch looks stale.")
                 }
             }
             .navigationTitle("Settings")

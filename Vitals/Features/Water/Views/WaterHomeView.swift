@@ -264,8 +264,6 @@ struct CustomAmountSheet: View {
                         Text(settings.volumeUnit.label)
                             .foregroundStyle(.secondary)
                     }
-                } footer: {
-                    Text("Logged to Apple Health as water.")
                 }
             }
             .navigationTitle("Custom Amount")

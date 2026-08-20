@@ -133,10 +133,9 @@ struct AIRecoveryView: View {
         } header: {
             Text("Your goals")
         } footer: {
+            // Only surfaces when Apple Intelligence is unavailable.
             if let availabilityNote {
                 Text(availabilityNote)
-            } else {
-                Text("Generated on this iPhone. Your workout details never leave the device.")
             }
         }
 

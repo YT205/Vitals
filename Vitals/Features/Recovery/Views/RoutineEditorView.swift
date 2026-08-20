@@ -57,8 +57,6 @@ struct RoutineEditorView: View {
                             .foregroundStyle(.secondary)
                         }
                     }
-                } footer: {
-                    Text("Routines matching muscles you trained recently show up under Suggested for You.")
                 }
 
                 Section {
@@ -91,8 +89,6 @@ struct RoutineEditorView: View {
                                 .font(.caption)
                         }
                     }
-                } footer: {
-                    Text("Swipe left to remove a step. Tap Edit to drag steps into a new order. Per Side runs the timer twice, once for each side.")
                 }
 
                 Section("Notes") {

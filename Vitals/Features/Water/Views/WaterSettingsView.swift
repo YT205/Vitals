@@ -77,8 +77,6 @@ struct WaterSettingsView: View {
             }
         } header: {
             Text("Goal")
-        } footer: {
-            Text("A common starting point is about half your bodyweight in pounds, in fluid ounces.")
         }
     }
 
@@ -119,8 +117,6 @@ struct WaterSettingsView: View {
             }
         } header: {
             Text("Reminders")
-        } footer: {
-            Text("Reminders repeat daily and keep working whether or not the app is open.")
         }
     }
 

@@ -47,8 +47,6 @@ struct FinishWorkoutSheet: View {
                         )
                         StatBlock(value: "\(session.sets.count)", caption: "Sets")
                     }
-                } footer: {
-                    Text("Every set with a weight or reps entered is saved, checked off or not.")
                 }
 
                 Section {
@@ -86,18 +84,10 @@ struct FinishWorkoutSheet: View {
                     }
                 } header: {
                     Text("Effort")
-                } footer: {
-                    Text("Saved to Apple Health as your workout effort, same as rating it in the Workout app.")
                 }
 
                 Section {
                     Toggle("Update plan with today's numbers", isOn: $updatePlan)
-                } header: {
-                    Text("Plan")
-                } footer: {
-                    Text(updatePlan
-                        ? "Next time, each set is prefilled with what you lifted today."
-                        : "The workout is logged to history and Apple Health, but the template keeps its current weights and reps.")
                 }
 
                 Section {
@@ -125,8 +115,6 @@ struct FinishWorkoutSheet: View {
                             Text("Discard Workout")
                                 .frame(maxWidth: .infinity)
                         }
-                    } footer: {
-                        Text("Under 10 minutes. If this was a false start, discarding deletes it entirely -- nothing is written to history or Apple Health.")
                     }
                 }
             }

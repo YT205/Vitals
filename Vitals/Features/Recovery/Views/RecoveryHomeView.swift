@@ -108,8 +108,6 @@ struct RecoveryHomeView: View {
                             }
                         } header: {
                             Label("Suggested for You", systemImage: "sparkles")
-                        } footer: {
-                            Text("Based on the muscle groups you trained in the last 3 days.")
                         }
                     }
 

@@ -35,8 +35,6 @@ struct LogWeightSheet: View {
                         in: ...Date.now,
                         displayedComponents: [.date, .hourAndMinute]
                     )
-                } footer: {
-                    Text("Saved to Apple Health. If your height is in Health, BMI is calculated and saved too.")
                 }
 
                 if let errorMessage {
@@ -182,8 +180,6 @@ struct BodyFatCalculatorView: View {
                         ForEach(MeasureUnit.allCases) { Text($0.rawValue).tag($0) }
                     }
                     .pickerStyle(.segmented)
-                } footer: {
-                    Text("Uses the U.S. Navy circumference method. Measure with a soft tape: neck below the larynx, waist at the navel\(sex == .female ? ", hips at the widest point" : "").")
                 }
 
                 Section("Measurements") {
@@ -232,8 +228,6 @@ struct BodyFatCalculatorView: View {
                     }
                 } header: {
                     Text("Estimate")
-                } footer: {
-                    Text("Circumference estimates typically land within a few percent of lab methods. Track the trend, not the single number. Lean body mass is saved alongside when Health has a recent weight.")
                 }
 
                 if let errorMessage {

@@ -51,10 +51,6 @@ struct TemplateEditorView: View {
                     } label: {
                         Label("Add Exercises", systemImage: "plus")
                     }
-                } footer: {
-                    if !template.items.isEmpty {
-                        Text("Each set keeps its own weight and reps. After a workout, what you actually lifted is written back into the plan.")
-                    }
                 }
 
             }
@@ -232,12 +228,10 @@ struct TemplateEditorView: View {
                 .accessibilityLabel("Options for \(item.exerciseName)")
             }
         } footer: {
+            // Kept: the only always-visible sign that a pairing exists.
             if let alternate = item.alternate {
-                Label(
-                    "Alternative: \(alternate.exerciseName). Swap during a workout, or switch here to edit its sets.",
-                    systemImage: "arrow.triangle.branch"
-                )
-                .font(.caption2)
+                Label("Alternative: \(alternate.exerciseName)", systemImage: "arrow.triangle.branch")
+                    .font(.caption2)
             }
         }
     }
