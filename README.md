@@ -93,6 +93,12 @@ xcodebuild -project Vitals.xcodeproj -scheme Vitals \
 5. Approve the Health permission prompts on both devices; widgets appear in
    the home screen gallery after the app has been opened once.
 
+**Device on an iOS/watchOS beta newer than your Xcode?** Xcode can't deploy
+to a newer major OS than its SDKs — install the matching Xcode beta from
+developer.apple.com/download/applications alongside stable (keep both), let
+it download the beta platforms, and build from it. No project changes
+needed. Expect to update the Xcode beta when the device beta updates.
+
 **Free Apple ID:** installs expire after 7 days (re-run from Xcode to
 re-sign; all data survives) and iOS caps you at 3 sideloaded apps. A paid
 Apple Developer Program membership extends signatures to 1 year. App Groups
