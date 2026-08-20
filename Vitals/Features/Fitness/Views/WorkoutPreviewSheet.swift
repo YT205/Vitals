@@ -76,9 +76,21 @@ struct WorkoutPreviewSheet: View {
                 Text(item.exerciseName)
                     .font(.body.weight(.medium))
                 Spacer()
-                Label("\(item.restSeconds)s rest", systemImage: "timer")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
+                Label(
+                    "\(WorkoutSession.formatMinutesSeconds(Double(item.restSeconds))) rest",
+                    systemImage: "timer"
+                )
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+            }
+
+            if let alternate = item.alternate {
+                Label(
+                    "Alternative: \(alternate.exerciseName)",
+                    systemImage: "arrow.triangle.branch"
+                )
+                .font(.caption2)
+                .foregroundStyle(.secondary)
             }
 
             // Column header, matching SetHeaderRow.

@@ -19,6 +19,8 @@ struct TemplateEditorView: View {
     @State private var showingReorder = false
     /// Weight or reps value being edited via the bottom number pad.
     @State private var padTarget: NumberPadTarget?
+    /// The exercise an alternative is being picked for.
+    @State private var pickingAlternateFor: TemplateItem?
 
     private var canSave: Bool {
         !template.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -97,6 +99,18 @@ struct TemplateEditorView: View {
                     addExercises(exercises)
                 }
             }
+            .sheet(item: $pickingAlternateFor) { item in
+                // Multi-select picker reused; the first pick becomes the
+                // alternative for this exercise.
+                ExercisePickerView(
+                    excluding: Set(
+                        template.items.map(\.exerciseName)
+                            + template.items.compactMap(\.alternate?.exerciseName)
+                    )
+                ) { exercises in
+                    linkAlternate(exercises.first, to: item)
+                }
+            }
             .onAppear {
                 // Items created before per-set planning get plan rows built
                 // from their legacy targets, once.
@@ -127,11 +141,16 @@ struct TemplateEditorView: View {
 
                 Menu {
                     ForEach(Array(stride(from: 15, through: 300, by: 15)), id: \.self) { seconds in
-                        Button("\(seconds)s") { item.restSeconds = seconds }
+                        Button(WorkoutSession.formatMinutesSeconds(Double(seconds))) {
+                            item.restSeconds = seconds
+                        }
                     }
                 } label: {
-                    Label("\(item.restSeconds)s", systemImage: "timer")
-                        .font(.caption2)
+                    Label(
+                        WorkoutSession.formatMinutesSeconds(Double(item.restSeconds)),
+                        systemImage: "timer"
+                    )
+                    .font(.caption2)
                 }
                 .accessibilityLabel("Rest between sets, \(item.restSeconds) seconds")
             }
@@ -175,6 +194,32 @@ struct TemplateEditorView: View {
                     }
                     .disabled(item.order == template.items.count - 1)
 
+                    Divider()
+
+                    if let alternate = item.alternate {
+                        Button {
+                            makeAlternatePrimary(of: item)
+                        } label: {
+                            Label(
+                                "Switch to \(alternate.exerciseName)",
+                                systemImage: "arrow.left.arrow.right"
+                            )
+                        }
+                        Button(role: .destructive) {
+                            item.alternate = nil
+                        } label: {
+                            Label("Unlink Alternative", systemImage: "link.badge.plus")
+                        }
+                    } else {
+                        Button {
+                            pickingAlternateFor = item
+                        } label: {
+                            Label("Add Alternative", systemImage: "arrow.triangle.branch")
+                        }
+                    }
+
+                    Divider()
+
                     Button(role: .destructive) {
                         deleteItem(item)
                     } label: {
@@ -186,7 +231,28 @@ struct TemplateEditorView: View {
                 }
                 .accessibilityLabel("Options for \(item.exerciseName)")
             }
+        } footer: {
+            if let alternate = item.alternate {
+                Label(
+                    "Alternative: \(alternate.exerciseName). Swap during a workout, or switch here to edit its sets.",
+                    systemImage: "arrow.triangle.branch"
+                )
+                .font(.caption2)
+            }
         }
+    }
+
+    /// Swaps which variant lives in the template (and is therefore editable
+    /// and the default when starting a workout). Plans travel with their
+    /// exercise, so nothing is lost in the swap.
+    private func makeAlternatePrimary(of item: TemplateItem) {
+        guard let alternate = item.alternate else { return }
+        alternate.order = item.order
+        alternate.restSeconds = item.restSeconds
+        item.alternate = nil
+        alternate.template = item.template
+        item.template = nil
+        alternate.alternate = item
     }
 
     private func move(_ item: TemplateItem, by offset: Int) {
@@ -337,6 +403,32 @@ struct TemplateEditorView: View {
     private func deleteItem(_ item: TemplateItem) {
         context.delete(item)
         renumber()
+    }
+
+    /// Creates the alternative as a full TemplateItem mirroring the primary's
+    /// set structure (same set count and reps, weight starts empty -- it's a
+    /// different movement, the load won't transfer).
+    private func linkAlternate(_ exercise: Exercise?, to item: TemplateItem) {
+        guard let exercise else { return }
+
+        let alternate = TemplateItem(
+            exerciseName: exercise.name,
+            muscleGroup: exercise.muscleGroup,
+            restSeconds: item.restSeconds
+        )
+        context.insert(alternate)
+
+        for planSet in item.orderedSets {
+            let mirrored = TemplateSet(
+                setNumber: planSet.setNumber,
+                reps: planSet.reps,
+                weightKg: 0
+            )
+            mirrored.item = alternate
+            context.insert(mirrored)
+        }
+
+        item.alternate = alternate
     }
 
     private func addExercises(_ exercises: [Exercise]) {

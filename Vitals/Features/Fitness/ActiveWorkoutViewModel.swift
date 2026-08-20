@@ -270,6 +270,80 @@ final class ActiveWorkoutViewModel {
         }
     }
 
+    // MARK: - Alternate swap
+
+    /// The other variant available for a session exercise, if the template
+    /// pairs one: the alternate when the group is the primary, the primary
+    /// when the group is the alternate.
+    func alternateName(forGroup groupName: String, template: WorkoutTemplate?) -> String? {
+        guard let template else { return nil }
+        for item in template.items {
+            if item.exerciseName == groupName {
+                return item.alternate?.exerciseName
+            }
+            if let alternate = item.alternate, alternate.exerciseName == groupName {
+                return item.exerciseName
+            }
+        }
+        return nil
+    }
+
+    /// Swaps a session exercise to its paired variant: undone sets are
+    /// replaced with the variant's own plan (its weights, its reps, its
+    /// rest). Sets already completed stay logged under the exercise that
+    /// was actually performed.
+    func swapExercise(
+        groupName: String,
+        in session: WorkoutSession,
+        template: WorkoutTemplate?,
+        context: ModelContext
+    ) {
+        guard let template else { return }
+
+        // Resolve the pair (primary in template.items, alternate hanging off it).
+        var target: TemplateItem?
+        for item in template.items {
+            if item.exerciseName == groupName {
+                target = item.alternate
+            } else if let alternate = item.alternate, alternate.exerciseName == groupName {
+                target = item
+            }
+            if target != nil { break }
+        }
+        guard let target else { return }
+
+        let groupEntries = session.orderedSets.filter { $0.exerciseName == groupName }
+        guard let order = groupEntries.first?.exerciseOrder else { return }
+
+        // A set mid-timer in this group ends with the group.
+        if let active = activeSetID,
+           groupEntries.contains(where: { $0.persistentModelID == active }) {
+            activeSetID = nil
+            setElapsed = 0
+            goIdle()
+        }
+
+        for entry in groupEntries where !entry.isDone {
+            context.delete(entry)
+        }
+
+        let plan = target.materializedPlan(in: context)
+        for planSet in plan {
+            let entry = SetEntry(
+                exerciseName: target.exerciseName,
+                muscleGroup: target.muscleGroup,
+                exerciseOrder: order,
+                setNumber: planSet.setNumber,
+                weightKg: planSet.weightKg,
+                reps: planSet.reps,
+                restSeconds: target.restSeconds
+            )
+            entry.session = session
+            context.insert(entry)
+        }
+        try? context.save()
+    }
+
     // MARK: - Set management
 
     func delete(_ entry: SetEntry, context: ModelContext) {
@@ -355,25 +429,37 @@ final class ActiveWorkoutViewModel {
 
     /// Copies performed weights and reps back onto the matching plan sets
     /// (matched by exercise name + set number), so the plan tracks reality.
+    ///
+    /// Alternates are matched by their own names: swap to the alternate for
+    /// a session and only the alternate's numbers move. The variant you
+    /// didn't do keeps its plan untouched.
     private func writeBackPlan(from session: WorkoutSession, to template: WorkoutTemplate) {
         for item in template.items {
-            let performed = session.completedSets
-                .filter { $0.exerciseName == item.exerciseName && !$0.isWarmup }
-
-            for planSet in item.sets {
-                if let match = performed.first(where: { $0.setNumber == planSet.setNumber }),
-                   match.weightKg > 0 {
-                    planSet.weightKg = match.weightKg
-                    planSet.reps = match.reps
-                }
+            writeBack(from: session, to: item)
+            if let alternate = item.alternate {
+                writeBack(from: session, to: alternate)
             }
-
-            // Legacy prefill field, still used when a plan has no per-set rows.
-            if let heaviest = performed.map(\.weightKg).max(), heaviest > 0 {
-                item.lastWeightKg = heaviest
-            }
-            item.refreshLegacySummary()
         }
+    }
+
+    private func writeBack(from session: WorkoutSession, to item: TemplateItem) {
+        let performed = session.completedSets
+            .filter { $0.exerciseName == item.exerciseName && !$0.isWarmup }
+        guard !performed.isEmpty else { return }
+
+        for planSet in item.sets {
+            if let match = performed.first(where: { $0.setNumber == planSet.setNumber }),
+               match.weightKg > 0 {
+                planSet.weightKg = match.weightKg
+                planSet.reps = match.reps
+            }
+        }
+
+        // Legacy prefill field, still used when a plan has no per-set rows.
+        if let heaviest = performed.map(\.weightKg).max(), heaviest > 0 {
+            item.lastWeightKg = heaviest
+        }
+        item.refreshLegacySummary()
     }
 
     /// Deletes the session *after* the workout screen has animated away.

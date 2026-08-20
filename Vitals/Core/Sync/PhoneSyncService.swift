@@ -177,21 +177,33 @@ final class PhoneSyncService: NSObject {
         template.lastPerformedAt = workout.endedAt
 
         for item in template.items {
-            let performed = workout.sets.filter {
-                $0.exerciseName == item.exerciseName && !$0.isWarmup
+            writeBack(workout, to: item)
+            if let alternate = item.alternate {
+                writeBack(workout, to: alternate)
             }
-            for planSet in item.sets {
-                if let match = performed.first(where: { $0.setNumber == planSet.setNumber }),
-                   match.weightKg > 0 {
-                    planSet.weightKg = match.weightKg
-                    planSet.reps = match.reps
-                }
-            }
-            if let heaviest = performed.map(\.weightKg).max(), heaviest > 0 {
-                item.lastWeightKg = heaviest
-            }
-            item.refreshLegacySummary()
         }
+    }
+
+    /// Matches performed sets to one variant by its own name, so swapped
+    /// sessions update only the variant that was actually done.
+    @MainActor
+    private func writeBack(_ workout: WorkoutSession, to item: TemplateItem) {
+        let performed = workout.sets.filter {
+            $0.exerciseName == item.exerciseName && !$0.isWarmup
+        }
+        guard !performed.isEmpty else { return }
+
+        for planSet in item.sets {
+            if let match = performed.first(where: { $0.setNumber == planSet.setNumber }),
+               match.weightKg > 0 {
+                planSet.weightKg = match.weightKg
+                planSet.reps = match.reps
+            }
+        }
+        if let heaviest = performed.map(\.weightKg).max(), heaviest > 0 {
+            item.lastWeightKg = heaviest
+        }
+        item.refreshLegacySummary()
     }
 }
 

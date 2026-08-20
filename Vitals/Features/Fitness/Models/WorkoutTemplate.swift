@@ -57,6 +57,17 @@ final class TemplateItem {
     @Relationship(deleteRule: .cascade, inverse: \TemplateSet.item)
     var sets: [TemplateSet] = []
 
+    /// An interchangeable exercise for this slot (different machine, busy
+    /// gym). A full TemplateItem with its own plan sets and rest, but no
+    /// `template` and no `order` -- it lives through this relationship, not
+    /// in the template's item list. One level only: an alternate never has
+    /// its own alternate.
+    ///
+    /// Weights and reps update independently: finishing a workout writes
+    /// back only to whichever variant was actually performed.
+    @Relationship(deleteRule: .cascade)
+    var alternate: TemplateItem?
+
     init(
         exerciseName: String,
         muscleGroup: MuscleGroup = .other,

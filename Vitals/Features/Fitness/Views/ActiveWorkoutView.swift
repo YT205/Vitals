@@ -129,6 +129,26 @@ struct ActiveWorkoutView: View {
                                     Label("Collapse", systemImage: "chevron.up")
                                         .font(.caption2)
                                 }
+                            } else if let alternate = model.alternateName(
+                                forGroup: group.name,
+                                template: template
+                            ) {
+                                // Swap to the paired exercise: undone sets
+                                // become the other variant's plan.
+                                Button {
+                                    withAnimation(.snappy) {
+                                        model.swapExercise(
+                                            groupName: group.name,
+                                            in: session,
+                                            template: template,
+                                            context: context
+                                        )
+                                    }
+                                } label: {
+                                    Label(alternate, systemImage: "arrow.left.arrow.right")
+                                        .font(.caption2)
+                                        .lineLimit(1)
+                                }
                             } else {
                                 Text(group.muscleGroup.label)
                                     .foregroundStyle(.tertiary)
