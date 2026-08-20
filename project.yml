@@ -22,9 +22,9 @@ settings:
     MARKETING_VERSION: "0.1.0"
     CURRENT_PROJECT_VERSION: "1"
     CODE_SIGN_STYLE: Automatic
-    # Paste your 10-character Team ID here once you join the Developer Program.
-    # Leaving it blank lets Xcode pick your Personal Team automatically.
-    DEVELOPMENT_TEAM: ""
+    # yashst's Personal Team. Applies to all three targets; survives
+    # xcodegen regeneration (unlike team selection made in Xcode's UI).
+    DEVELOPMENT_TEAM: P33485TSN3
     SWIFT_EMIT_LOC_STRINGS: YES
 
 targets:
