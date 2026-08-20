@@ -75,10 +75,16 @@ final class WorkoutSession {
         return String(format: "%d:%02d", total / 60, total % 60)
     }
 
+    /// Minutes and seconds ("12:34"), rolling into hours ("1:02:11") past 60
+    /// minutes. Ticks visibly in the live workout header.
     var formattedDuration: String {
-        let minutes = Int(duration) / 60
-        let hours = minutes / 60
-        if hours > 0 { return "\(hours)h \(minutes % 60)m" }
-        return "\(minutes)m"
+        let total = Int(duration)
+        if total >= 3600 {
+            return String(
+                format: "%d:%02d:%02d",
+                total / 3600, (total % 3600) / 60, total % 60
+            )
+        }
+        return String(format: "%d:%02d", total / 60, total % 60)
     }
 }

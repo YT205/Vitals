@@ -294,6 +294,7 @@ final class ActiveWorkoutViewModel {
         session: WorkoutSession,
         template: WorkoutTemplate?,
         effortScore: Int?,
+        updatePlan: Bool = true,
         context: ModelContext,
         health: HealthKitService = .shared
     ) async {
@@ -323,8 +324,12 @@ final class ActiveWorkoutViewModel {
         }
 
         if let template {
+            // "Last done" always updates; the plan's numbers only move when
+            // the user chose to update them on the finish sheet.
             template.lastPerformedAt = end
-            writeBackPlan(from: session, to: template)
+            if updatePlan {
+                writeBackPlan(from: session, to: template)
+            }
         }
 
         try? context.save()

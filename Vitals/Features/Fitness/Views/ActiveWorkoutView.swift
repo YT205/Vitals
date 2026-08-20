@@ -325,12 +325,13 @@ struct ActiveWorkoutView: View {
         pendingAction = nil
 
         switch action {
-        case .save(let effortScore):
+        case .save(let effortScore, let updatePlan):
             Task {
                 await model.finish(
                     session: session,
                     template: template,
                     effortScore: effortScore,
+                    updatePlan: updatePlan,
                     context: context
                 )
                 dismiss()

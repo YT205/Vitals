@@ -3,7 +3,7 @@ import SwiftUI
 /// What the user chose on the finish sheet. Handled by `ActiveWorkoutView`
 /// *after* the sheet dismisses, so dismissal and deletion never overlap.
 enum FinishAction {
-    case save(effortScore: Int?)
+    case save(effortScore: Int?, updatePlan: Bool)
     case discard
 }
 
@@ -18,6 +18,8 @@ struct FinishWorkoutSheet: View {
 
     @State private var logEffort = true
     @State private var effort: Double = 5
+    /// Whether today's weights and reps overwrite the template's plan.
+    @State private var updatePlan = true
 
     /// Under 10 minutes: probably a false start, so offer to throw it away.
     private var isShortWorkout: Bool {
@@ -89,8 +91,21 @@ struct FinishWorkoutSheet: View {
                 }
 
                 Section {
+                    Toggle("Update plan with today's numbers", isOn: $updatePlan)
+                } header: {
+                    Text("Plan")
+                } footer: {
+                    Text(updatePlan
+                        ? "Next time, each set is prefilled with what you lifted today."
+                        : "The workout is logged to history and Apple Health, but the template keeps its current weights and reps.")
+                }
+
+                Section {
                     Button {
-                        onAction(.save(effortScore: logEffort ? Int(effort) : nil))
+                        onAction(.save(
+                            effortScore: logEffort ? Int(effort) : nil,
+                            updatePlan: updatePlan
+                        ))
                         dismiss()
                     } label: {
                         Text("Save Workout")

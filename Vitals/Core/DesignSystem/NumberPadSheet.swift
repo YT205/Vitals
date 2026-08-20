@@ -46,16 +46,23 @@ struct NumberPadTarget: Identifiable {
 struct NumberPadSheet: View {
     @Environment(\.dismiss) private var dismiss
 
-    /// The cell currently being edited. Next swaps this in place.
-    @State private var current: NumberPadTarget
+    /// The cell this presentation was opened for. A plain property, so it is
+    /// always the fresh value from the presenting view -- never sheet state.
+    ///
+    /// (The original design initialized @State from this in init. SwiftUI
+    /// preserves sheet state across presentations, so the pad kept editing
+    /// the first cell it ever showed: the "always says Set 1" bug.)
+    let target: NumberPadTarget
+
+    /// Set only when Next chains to another cell within one presentation.
+    @State private var chained: NumberPadTarget?
 
     /// The value as typed. Starts empty so the first digit replaces rather
     /// than appends to the old value; the old value shows as a placeholder.
     @State private var text = ""
 
-    init(target: NumberPadTarget) {
-        _current = State(initialValue: target)
-    }
+    /// The cell being edited right now.
+    private var current: NumberPadTarget { chained ?? target }
 
     private var placeholder: String {
         guard current.initialValue > 0 else { return "0" }
@@ -107,6 +114,16 @@ struct NumberPadSheet: View {
         }
         .presentationDetents([.height(420)])
         .presentationDragIndicator(.hidden)
+        // Defense in depth against sheet state reuse: if this presentation is
+        // for a different cell than any leftover state, wipe that state.
+        .onChange(of: target.id) {
+            chained = nil
+            text = ""
+        }
+        .onAppear {
+            chained = nil
+            text = ""
+        }
     }
 
     // MARK: - Keypad
@@ -252,15 +269,17 @@ struct NumberPadSheet: View {
     }
 
     private func copyDown() {
+        // Copies to this cell and every following set of the exercise, then
+        // STAYS here -- advancing is what the Next key is for.
         current.onCopyDown?(effectiveValue)
+        setValue(effectiveValue)
         Haptics.light()
-        goNext()
     }
 
     private func goNext() {
         commitIfEdited()
         if let nextTarget = current.next?() {
-            current = nextTarget
+            chained = nextTarget
             text = ""
         } else {
             dismiss()
