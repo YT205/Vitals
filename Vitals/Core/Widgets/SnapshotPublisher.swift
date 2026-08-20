@@ -85,8 +85,10 @@ enum SnapshotPublisher {
     static func drainPendingWater(
         context: ModelContext,
         settings: AppSettings,
-        health: HealthKitService = .shared
+        health: HealthKitService? = nil
     ) async {
+        // `.shared` resolved here, not in the default argument (nonisolated).
+        let health = health ?? .shared
         let pending = WidgetStore.loadPendingWater()
         guard !pending.isEmpty else { return }
         WidgetStore.clearPendingWater()

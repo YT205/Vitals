@@ -210,6 +210,13 @@ auto-completed at finish; empty rows are dropped.
     hand-curated instead. Don't retry scraping without a browser-side export.
 14. HealthKit never reports whether READ permission was granted — empty
     dashboard usually means Health permissions, and the UI says so.
+15. `.background(.background.secondary)` is *relative* to the container and
+    changes resolution with sheet detents — value-box fills vanished at the
+    large detent. Use a concrete color (`Color(.tertiarySystemFill)`) for
+    the boxed weight/reps fields; every such box now does.
+16. Default argument expressions are nonisolated: `= .shared` referencing a
+    @MainActor singleton is a Swift 6 error. Pattern used everywhere:
+    optional parameter, `let x = x ?? .shared` in the isolated body.
 
 ## Known gaps / natural next steps
 
@@ -238,3 +245,99 @@ something is a fallback or unverifiable, dislikes clutter (has removed
 features for being "too big"), wants UI consistent with existing patterns
 (boxed tables, m:ss times). When a report contradicts the code you're
 reading, consider stale-build before assuming a new bug — it has happened.
+
+## Quickstart for a fresh agent
+
+```bash
+cd ~/Documents/Vitals
+xcodegen generate          # regenerate project after any file/target change
+open Vitals.xcodeproj      # or build headless as below
+```
+Build/verify (always both, log-and-grep — full output floods context):
+```bash
+xcodebuild -project Vitals.xcodeproj -scheme Vitals \
+  -destination 'platform=iOS Simulator,name=iPhone 17 Pro' \
+  CODE_SIGNING_ALLOWED=NO build > /tmp/ios.log 2>&1; grep -c "error:" /tmp/ios.log
+xcodebuild -project Vitals.xcodeproj -scheme VitalsWatch \
+  -destination 'platform=watchOS Simulator,name=Apple Watch Series 11 (46mm)' \
+  CODE_SIGNING_ALLOWED=NO build > /tmp/watch.log 2>&1; grep -c "error:" /tmp/watch.log
+```
+Warnings hide in incremental builds; use a fresh `-derivedDataPath` to
+re-emit all of them. Commit with `git commit -F /tmp/msg.txt` (long `-m`
+strings have hung this shell repeatedly).
+
+## File map
+
+```
+project.yml                  XcodeGen spec: 3 targets, entitlements, plists
+Vitals/
+  App/                       VitalsApp (settings env, appearance), RootTabView
+                             (4 tabs, HK auth, sync activate, widget drain)
+  Core/
+    Health/                  VitalKind (config-driven vital enum), VitalReading
+                             (+VitalBaseline/VitalStatus), HealthKitService
+                             (all HK reads/writes, history, workout+effort save)
+    Persistence/             VitalsModelContainer (schema registry, seeding,
+                             versioned migrations, one-shot cleanups)
+    Settings/                AppSettings (@Observable prefs, unit conversion)
+    Sync/                    WorkoutSyncModels (DTOs), PhoneSyncService (WCSession)
+    Widgets/                 WidgetShared (App Group store), SnapshotPublisher
+    DesignSystem/            Card, ProgressRing (NaN-safe), StatBlock,
+                             EmptyStateView, NumberPadSheet (chained keypad)
+    Notifications/           NotificationService (water reminder scheduling)
+    Haptics.swift            platform-branched feedback
+  Features/
+    Health/                  dashboard, detail views (charts), body log +
+                             Navy calculator, metric picker
+    Fitness/                 models (Template/Item/Set, Session/SetEntry,
+                             Exercise), ActiveWorkoutViewModel (shared, timer
+                             phases, write-back, swap), all fitness views
+    Recovery/                models, RecoveryLibrary (step bank + generator),
+                             player VM (shared w/ watch), AI/ (FM service+view)
+    Water/                   WaterEntry, view model, views (logging, settings)
+    Settings/                SettingsView (units, appearance, sync status)
+VitalsWatch/                 watch app: WatchWorkoutManager (HKWorkoutSession),
+                             WatchSyncService, per-page views, own container
+VitalsWidgets/               widget bundle, vitals + water widgets, AddWaterIntent
+```
+
+## Data model quick reference
+
+| Model | Key fields | Notes |
+|---|---|---|
+| WorkoutTemplate | name, sortOrder, items | user's plan |
+| TemplateItem | exerciseName, muscleGroup, restSeconds, order, sets, **alternate** | alternate: full item, template==nil, one level |
+| TemplateSet | setNumber, reps, weightKg | per-set plan |
+| WorkoutSession | title, startedAt/endedAt, effortScore, savedToHealthKit, sets | performed |
+| SetEntry | exercise denorm fields, setNumber, weightKg, reps, isWarmup, isDone, startedAt, durationSeconds, restSeconds, completedAt | timing optional |
+| Exercise | name, muscleGroup, equipment, isCustom | seeded library |
+| RecoveryRoutine | name, kind, targetGroups, steps, completionCount | drives suggestions |
+| RecoveryStep | name, seconds, isPerSide, instructions, order | per-side runs twice |
+| WaterEntry | amountML, loggedAt, savedToHealthKit | HK-mirrored |
+
+Adding a @Model: register in `VitalsModelContainer.schema`. Optional fields
+and defaulted additions migrate lightweight; anything else needs a
+VersionedSchema (none exist yet).
+
+## Manual test loop (no automated tests yet)
+
+After any fitness-flow change, walk this on simulator or device:
+1. Create a workout (2 exercises, per-set weights), link an alternative.
+2. Preview it (check plan table + rest m:ss + alternative caption at both
+   sheet detents — fills must not vanish).
+3. Start it: number pad Next-chain across cells, copy-down stays put, dial
+   phases (set → rest → orange overtime), swap to alternative mid-way,
+   collapse-on-complete, leave and re-enter the screen mid-rest.
+4. Finish: effort slider, update-plan toggle OFF then verify the template
+   kept old numbers; ON path prefills next session.
+5. Watch: template appears (Sync Now if not), run a set, End — workout
+   lands in phone History without duplicates.
+6. Widgets: log water via +8oz, open app, verify drain into Water tab total.
+
+## Git history
+
+The commit log is the round-by-round changelog — `git -P log --oneline`
+reads as a feature history. Notable commits: initial scaffold, per-set
+plans (4c2e1bd), app-lived timer (037af49), watch app (8954aa9), watch
+sync v2 (f6b0c05, 1489353), AI recovery (4372111), widgets (dd1b585),
+alternates (bbcd3a8).

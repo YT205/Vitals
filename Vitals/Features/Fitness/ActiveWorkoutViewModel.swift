@@ -370,8 +370,11 @@ final class ActiveWorkoutViewModel {
         effortScore: Int?,
         updatePlan: Bool = true,
         context: ModelContext,
-        health: HealthKitService = .shared
+        health: HealthKitService? = nil
     ) async {
+        // Default arguments are nonisolated, so `.shared` can't be the
+        // default; resolve inside the isolated body instead.
+        let health = health ?? .shared
         // Close out a set still on the clock.
         if let activeSetID,
            let current = session.sets.first(where: {

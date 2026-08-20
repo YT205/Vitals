@@ -126,7 +126,7 @@ struct WorkoutPreviewSheet: View {
                     .multilineTextAlignment(.center)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 4)
-                    .background(.background.secondary, in: .rect(cornerRadius: 7))
+                    .background(Color(.tertiarySystemFill), in: .rect(cornerRadius: 7))
 
                     Text("x")
                         .font(.caption)
@@ -137,7 +137,7 @@ struct WorkoutPreviewSheet: View {
                         .multilineTextAlignment(.center)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 4)
-                        .background(.background.secondary, in: .rect(cornerRadius: 7))
+                        .background(Color(.tertiarySystemFill), in: .rect(cornerRadius: 7))
                 }
             }
         }

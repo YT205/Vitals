@@ -14,8 +14,12 @@ final class HealthDashboardViewModel {
     var errorMessage: String?
     var lastRefreshed: Date?
 
-    init(health: HealthKitService = .shared) {
-        self.health = health
+    // Optional-with-nil-default instead of `= .shared`: default argument
+    // expressions are nonisolated, so referencing the MainActor singleton
+    // there is a Swift 6 error. The init body is isolated; resolving here
+    // is fine.
+    init(health: HealthKitService? = nil) {
+        self.health = health ?? .shared
     }
 
     var isHealthAvailable: Bool { health.isAvailable }

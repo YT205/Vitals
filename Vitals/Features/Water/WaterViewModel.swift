@@ -13,8 +13,9 @@ final class WaterViewModel {
 
     var syncError: String?
 
-    init(health: HealthKitService = .shared) {
-        self.health = health
+    // See HealthDashboardViewModel.init for why this isn't `= .shared`.
+    init(health: HealthKitService? = nil) {
+        self.health = health ?? .shared
     }
 
     // MARK: - Logging
