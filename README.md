@@ -1,13 +1,17 @@
 # Vitals
 
-Personal health, lifting, recovery and hydration tracker for iPhone. Apple Watch
-app comes next.
+Personal health, lifting, recovery and hydration tracker: iPhone app, Apple
+Watch companion, and home screen widgets.
+
+> Working on this codebase? **Read HANDOFF.md first** — it has the current
+> architecture, per-target layout, sync design, and the list of hard-won
+> gotchas. Parts of this README predate the watch app, widgets, and AI
+> features.
 
 ## Status
 
-Not yet compiled. Xcode wasn't installed when this was written, so the code has
-been syntax-checked only (`swiftc -parse` passes on all 36 files) and never
-type-checked or run. Expect a handful of compiler fixes on the first build.
+Builds clean on all three targets (iOS app, watchOS app, widget extension)
+and runs on device. See HANDOFF.md for the feature map.
 
 ## Getting it running
 
