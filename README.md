@@ -1,133 +1,109 @@
 # Vitals
 
 Personal health, lifting, recovery and hydration tracker: iPhone app, Apple
-Watch companion, and home screen widgets.
+Watch companion, and interactive home screen widgets.
 
-> Working on this codebase? **Read HANDOFF.md first** — it has the current
-> architecture, per-target layout, sync design, and the list of hard-won
-> gotchas. Parts of this README predate the watch app, widgets, and AI
-> features.
+- **Health** — vitals dashboard fed by Apple Health, personal usual-range
+  badges, sleep breakdown, body composition logging (weight, Navy-method
+  body fat), 30/90-day history charts.
+- **Fitness** — per-set workout plans with alternate exercises, live workout
+  with set/rest/overtime dial, chained number pad entry, progress charts,
+  training calendar. Workouts write to Apple Health with effort scores.
+- **Recovery** — guided stretch/massage-gun routines, suggestions based on
+  recently trained muscle groups, on-device AI routine generation
+  (Apple Intelligence / FoundationModels).
+- **Water** — quick logging, goal ring, daily reminders, widget quick-add.
+- **Watch** — live heart rate workouts (HKWorkoutSession), synced workout
+  plans via WatchConnectivity, finished workouts flow back to the phone.
 
-## Status
+Working on the code? Read **HANDOFF.md** — architecture, data model,
+sync design, and the accumulated gotchas live there.
 
-Builds clean on all three targets (iOS app, watchOS app, widget extension)
-and runs on device. See HANDOFF.md for the feature map.
+## Setup on a new Mac
 
-## Getting it running
+### 1. Prerequisites
 
-1. Install **Xcode 26.6** from the Mac App Store.
-2. Point the toolchain at it:
-   ```bash
-   sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
-   sudo xcodebuild -license accept
-   xcodebuild -downloadPlatform iOS
-   ```
-3. Generate and open the project:
-   ```bash
-   cd ~/Documents/Vitals
-   xcodegen generate
-   open Vitals.xcodeproj
-   ```
-4. Set your signing team: select the `Vitals` target, Signing & Capabilities, pick
-   your team. Or paste your Team ID into `DEVELOPMENT_TEAM` in `project.yml` and
-   re-run `xcodegen generate`.
-5. Build to a real iPhone. HealthKit returns nothing useful in the simulator.
+- macOS Tahoe 26.2+, Apple Silicon recommended
+- **Xcode 26.x** from the Mac App Store (~20 GB), then:
+  ```bash
+  sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
+  sudo xcodebuild -license accept
+  xcodebuild -downloadPlatform iOS
+  xcodebuild -downloadPlatform watchOS
+  ```
+- [XcodeGen](https://github.com/yonaskolb/XcodeGen) (the `.xcodeproj` is
+  generated, never committed):
+  ```bash
+  brew install xcodegen
+  ```
 
-After first launch, open **Health → Sharing → Apps & Services → Vitals** and turn
-on the categories you want. iOS never tells an app whether read access was
-granted, so an empty dashboard almost always means permissions, not a bug.
-
-## The project is generated
-
-`Vitals.xcodeproj` is produced by [XcodeGen](https://github.com/yonaskolb/XcodeGen)
-from `project.yml`. Don't hand-edit the project file — change `project.yml` and
-re-run `xcodegen generate`. New source files under `Vitals/` are picked up
-automatically; you only touch `project.yml` for build settings, capabilities and
-new targets.
+### 2. Clone and generate
 
 ```bash
-brew install xcodegen   # already installed
+git clone https://github.com/YT205/Vitals.git
+cd Vitals
+xcodegen generate
+open Vitals.xcodeproj
 ```
 
-## Architecture
+Re-run `xcodegen generate` any time `project.yml` changes or files are
+added. Never edit the `.xcodeproj` directly — it's disposable output.
 
+### 3. Signing
+
+`project.yml` pins `DEVELOPMENT_TEAM` at the top of the file.
+
+- **Same owner, new Mac:** sign into Xcode with the same Apple ID
+  (Xcode → Settings → Accounts → +). The pinned team resolves automatically
+  and you're done.
+- **Different Apple ID:** replace `DEVELOPMENT_TEAM` with your own 10-char
+  Team ID and change the identifiers, which are registered per-team:
+  - `bundleIdPrefix` and each `PRODUCT_BUNDLE_IDENTIFIER` in `project.yml`
+  - the App Group (`group.com.yashst.vitals`) in `project.yml`
+    (both entitlements blocks) **and** in
+    `Vitals/Core/Widgets/WidgetShared.swift` (`WidgetStore.appGroupID`)
+  - `WKCompanionAppBundleIdentifier` in the watch target's info block
+
+  Then `xcodegen generate` again.
+
+### 4. Run in the simulator (no account needed beyond sign-in)
+
+Select the **Vitals** scheme → any iPhone simulator → Run. For the watch,
+select **VitalsWatch** → a watch simulator. Sync works between *paired*
+phone+watch simulators; run the phone app once first so it pushes the
+workout library.
+
+Headless build check:
+```bash
+xcodebuild -project Vitals.xcodeproj -scheme Vitals \
+  -destination 'platform=iOS Simulator,name=iPhone 17 Pro' \
+  CODE_SIGNING_ALLOWED=NO build
 ```
-Vitals/
-├── App/           VitalsApp, RootTabView (the bottom bar)
-├── Core/
-│   ├── Health/    HealthKitService, VitalKind, VitalReading
-│   ├── Persistence/  SwiftData container + seeding
-│   ├── Settings/  AppSettings (units, goal, reminders)
-│   ├── Notifications/  water reminder scheduling
-│   └── DesignSystem/   Card, ProgressRing, StatBlock, ...
-└── Features/
-    ├── Health/    dashboard tab
-    ├── Fitness/   templates, live logging, history
-    ├── Recovery/  stretching + massage gun routines
-    ├── Water/     logging, goal ring, reminders
-    └── Settings/  units and rest timer
-```
 
-### Where data lives
+### 5. Run on real devices
 
-Two stores, on purpose.
+1. iPhone: Settings → Privacy & Security → **Developer Mode** → on → reboot.
+   Same on the watch (its own Settings app).
+2. Connect the iPhone, select it as the destination for the **Vitals**
+   scheme, Run.
+3. First launch is blocked: on the phone, Settings → General →
+   VPN & Device Management → trust your developer certificate, launch again.
+4. The watch app installs to the paired watch automatically (~1 min), or
+   manage it from the iPhone's Watch app.
+5. Approve the Health permission prompts on both devices; widgets appear in
+   the home screen gallery after the app has been opened once.
 
-**HealthKit** owns anything that should outlive the app: vitals and sleep are read
-from it, and finished workouts plus every water log are written back to it. Delete
-the app, reinstall it a year later, and that history is still in Health.
+**Free Apple ID:** installs expire after 7 days (re-run from Xcode to
+re-sign; all data survives) and iOS caps you at 3 sideloaded apps. A paid
+Apple Developer Program membership extends signatures to 1 year. App Groups
+(the widgets) can be temperamental on free personal teams — if the widget
+target blocks signing, build just the phone+watch first and revisit.
 
-**SwiftData** owns what HealthKit can't model: the exercise library, workout
-templates, individual set logs (weight × reps), and recovery routines. HealthKit
-has no concept of "3×8 at 185 lb", so that has to live locally.
+### 6. Data notes
 
-Weights are always stored in **kilograms** and volumes in **millilitres**.
-Conversion to lb / fl oz happens only at the display layer via `AppSettings`.
-Never store a display value.
-
-### Adding things
-
-**A new vital on the Health tab** — add a case to `VitalKind` and fill in the
-switches (title, icon, tint, section, HealthKit identifier, unit, aggregation).
-The dashboard picks it up automatically; no view changes.
-
-**A new tab** — add a `Tab` in `RootTabView` and a folder under `Features/`.
-
-**A new SwiftData model** — create the `@Model` type and register it in
-`VitalsModelContainer.schema`. Adding a property with a default value migrates
-automatically; anything more needs a `VersionedSchema`.
-
-**A new exercise or starter routine** — `ExerciseLibrary` and `RecoveryLibrary`
-only run when their tables are empty, so editing them won't affect an install that
-already has data. Add through the app UI instead once you're using it.
-
-## Notable implementation details
-
-- **Set logging** writes straight to SwiftData on every keystroke, so backgrounding
-  or force-quitting mid-workout loses nothing. An unfinished session is detected on
-  launch and offered as "In Progress".
-- **Finishing a workout** deletes any sets you never checked off, writes the
-  heaviest weight per exercise back onto the template so next session is prefilled,
-  then mirrors the session to HealthKit as `traditionalStrengthTraining`. If the
-  HealthKit write fails the workout is still saved locally and the row shows a
-  warning icon.
-- **Per-side recovery steps** are flattened into two timer stages (Left, then
-  Right) by `RoutinePlayerViewModel`, so the view has no special cases. The screen
-  stays awake while a routine is running.
-- **Water reminders** are one repeating daily `UNCalendarNotificationTrigger` per
-  slot, capped at 32 to stay under the iOS pending-notification limit. They fire
-  whether or not the app is running.
-
-## Known gaps
-
-- Swift language mode is pinned to **5.0** with `SWIFT_STRICT_CONCURRENCY: minimal`
-  in `project.yml`. This was a deliberate call: strict Swift 6 concurrency
-  correctness can't be verified without compiling. Flip `SWIFT_VERSION` to `6.0`
-  once the app builds and fix the diagnostics then.
-- No app icon. `AppIcon.appiconset` is an empty 1024×1024 slot.
-- No tests. Worth adding around `AppSettings` conversions,
-  `NotificationService.reminderSlots`, and `SetEntry.estimatedOneRepMaxKg` — all
-  pure functions and easy to cover.
-- Deleting a water entry removes the local record but leaves the HealthKit sample
-  in place. Deleting from HealthKit needs the sample UUID stored on `WaterEntry`.
-- The Health dashboard reads a single latest value per vital. No charts or trends
-  yet; `Swift Charts` plus a `HKStatisticsCollectionQuery` is the natural next step.
+- Workouts, water, and body metrics live in **Apple Health** — they survive
+  reinstalls, re-signs, and even deleting the app.
+- Plans, routines, and set-by-set history live in the app's local database
+  and survive re-signing (same bundle ID + team), but not app deletion.
+- Nothing leaves the devices: no server, no accounts, AI generation runs
+  on-device.
